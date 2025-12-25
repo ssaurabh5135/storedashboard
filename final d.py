@@ -4,7 +4,7 @@ from datetime import datetime
 import base64
 import os
 
-# Define paths relative to the repo root
+# Define relative paths for files in the repo root
 EXCEL_FILE = "tml.xlsx"
 BACKGROUND_IMAGE = "dark.jpg"
 TML_SHEET = "BTST - AVX AND TML"
@@ -360,4 +360,3 @@ centered_table_html = f"""
 </div>
 """
 st.markdown(centered_table_html, unsafe_allow_html=True)
-
