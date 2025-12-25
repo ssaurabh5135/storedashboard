@@ -25,10 +25,13 @@ page_bg_img = f'''
     background-repeat: no-repeat;
     background-attachment: fixed;
 }}
-/* Remove default Streamlit padding */
-.stApp > div {{
-    padding: 0 !important;
-    margin: 0 !important;
+/* Remove Streamlit default padding and margins */
+.reportview-container .main .block-container {{
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
 }}
 /* Glass table styling */
 .glass-table {{
