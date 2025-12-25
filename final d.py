@@ -4,12 +4,6 @@ from datetime import datetime
 import base64
 import os
 
-# Define relative paths for files in the repo root
-EXCEL_FILE = "tml.xlsx"
-BACKGROUND_IMAGE = "dark.jpg"
-TML_SHEET = "BTST - AVX AND TML"
-HEADER_ROW = 2  # 3rd Excel row (0-based)
-
 
 # Function to encode image as base64
 def get_base64(bin_file):
@@ -19,7 +13,7 @@ def get_base64(bin_file):
         return base64.b64encode(data).decode()
     return ""
 
-
+BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
 page_bg_img = f'''
 <style>
@@ -75,9 +69,17 @@ def norm(s: str) -> str:
     return s
 
 
-def load_tml():
-    df = pd.read_excel(EXCEL_FILE, sheet_name=TML_SHEET, header=HEADER_ROW)
+# Allow user to upload Excel file
+uploaded_file = st.file_uploader("Upload TML Excel File", type=["xlsx"])
+if uploaded_file is None:
+    st.warning("Please upload an Excel file to proceed.")
+    st.stop()
 
+# Read Excel file from uploaded file object
+df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
+
+
+def load_tml(df):
     raw_cols = list(df.columns)
     norm_cols = [norm(c) for c in raw_cols]
     col_map = dict(zip(norm_cols, raw_cols))
@@ -131,9 +133,7 @@ def load_tml():
 
     return df
 
-
-st.set_page_config(page_title="GRN Dashboard", layout="wide")
-tml_full = load_tml()
+tml_full = load_tml(df)
 
 customers = sorted(tml_full["CUSTOMER"].dropna().unique().tolist())
 selected_customer = st.selectbox("Customer", ["All"] + customers)
