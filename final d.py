@@ -237,7 +237,7 @@ body {{
 }}
 .title-black {{
     color: black !important;
-    font-size: 25px;
+    font-size: 18px;
     font-weight: 800;
     margin-top: 6px;
     text-align: center;
