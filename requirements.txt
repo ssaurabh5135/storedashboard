@@ -1,2 +1,7 @@
 streamlit
 pandas
+openpyxl
+gspread
+google-auth
+requests
+pydrive2
