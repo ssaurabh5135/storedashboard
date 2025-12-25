@@ -4,6 +4,71 @@ from datetime import datetime
 import base64
 import os
 
+# Set wide layout for full width
+st.set_page_config(layout="wide")
+
+# Custom CSS for full page coverage
+st.markdown(
+    """
+    <style>
+    /* Remove default Streamlit padding */
+    .stApp {
+        max-width: 100%;
+        padding: 0;
+    }
+    /* Main container */
+    .st-emotion-cache-1jicfl2 {
+        width: 100%;
+        padding: 0;
+        margin: 0;
+        max-width: initial;
+    }
+    /* Background image */
+    .stApp {
+        background-image: url("data:image/jpg;base64,INSERT_BASE64_HERE");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    /* Glass table styling */
+    .glass-table {
+        background: rgba(255,255,255,0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        margin: 20px 0;
+        box-shadow: 0 4px 30px rgba(0,0,0,0.1);
+        border: 1px solid rgba(255,255,255,0.3);
+        overflow-x: auto;
+    }
+    .glass-table h3 {
+        color: #038a58;
+        font-family: 'Fredoka', sans-serif;
+        text-align: center;
+    }
+    .glass-table table {
+        width: 100%;
+        border-collapse: collapse;
+        color: white;
+        font-family: 'Fredoka', sans-serif;
+    }
+    .glass-table th, .glass-table td {
+        border: 1px solid rgba(255,255,255,0.3);
+        padding: 10px;
+        text-align: center;
+    }
+    .glass-table th {
+        font-size: 12px;
+    }
+    .fixed-height {
+        height: 250px;        
+        overflow-y: auto;     
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Function to encode image as base64
 def get_base64(bin_file):
@@ -15,69 +80,14 @@ def get_base64(bin_file):
 
 BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
-page_bg_img = f'''
-<style>
-/* Full page background */
-.stApp {{
-    background-image: url("data:image/jpg;base64,{bin_str}");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-}}
-/* Remove Streamlit default padding and margins */
-.reportview-container .main .block-container {{
-    padding-top: 0;
-    padding-bottom: 0;
-    margin: 0;
-    width: 100%;
-    max-width: none;
-}}
-/* Glass table styling */
-.glass-table {{
-    background: rgba(255,255,255,0.1);
-    backdrop-filter: blur(10px);
-    border-radius: 15px;
-    padding: 20px;
-    margin: 20px 0;
-    box-shadow: 0 4px 30px rgba(0,0,0,0.1);
-    border: 1px solid rgba(255,255,255,0.3);
-    overflow-x: auto;
-}}
-.glass-table h3 {{
-    color: #038a58;
-    font-family: 'Fredoka', sans-serif;
-    text-align: center;
-}}
-.glass-table table {{
-    width: 100%;
-    border-collapse: collapse;
-    color: white;
-    font-family: 'Fredoka', sans-serif;
-}}
-.glass-table th, .glass-table td {{
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 10px;
-    text-align: center;
-}}
-.glass-table th {{
-    font-size: 12px;
-}}
-.fixed-height {{
-    height: 250px;        
-    overflow-y: auto;     
-}}
-</style>
-'''
-st.markdown(page_bg_img, unsafe_allow_html=True)
-
+# Replace INSERT_BASE64_HERE in CSS with bin_str
+st.markdown(f"<style>.stApp {{ background-image: url('data:image/jpg;base64,{bin_str}'); }}</style>", unsafe_allow_html=True)
 
 def norm(s: str) -> str:
     s = str(s).replace(" ", " ")
     s = " ".join(s.split())
     s = s.strip().upper()
     return s
-
 
 # File uploader
 uploaded_file = st.file_uploader("Upload TML Excel File", type=["xlsx"])
@@ -87,7 +97,6 @@ if uploaded_file is None:
 
 # Read Excel file from uploaded file object
 df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
-
 
 def load_tml(df):
     raw_cols = list(df.columns)
