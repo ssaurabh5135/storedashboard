@@ -17,6 +17,7 @@ BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
 page_bg_img = f'''
 <style>
+/* Full page background */
 .stApp {{
     background-image: url("data:image/jpg;base64,{bin_str}");
     background-size: cover;
@@ -24,6 +25,15 @@ page_bg_img = f'''
     background-repeat: no-repeat;
     background-attachment: fixed;
 }}
+/* Remove Streamlit default padding and margin */
+.st-emotion-cache-1jicfl2 {{
+    width: 100%;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: auto;
+    max-width: initial;
+}}
+/* Glass table styling */
 .glass-table {{
     background: rgba(255,255,255,0.1);
     backdrop-filter: blur(10px);
@@ -373,9 +383,7 @@ centered_table_html = f"""
 st.markdown(centered_table_html, unsafe_allow_html=True)
 
 
-
-
-#################################################################
+#################################################################################
 
 # import streamlit as st 
 # import pandas as pd
@@ -448,10 +456,21 @@ st.markdown(centered_table_html, unsafe_allow_html=True)
 #     return s
 
 
-# # Allow user to upload Excel file
-# uploaded_file = st.file_uploader("Upload TML Excel File", type=["xlsx"])
-# if uploaded_file is None:
-#     st.warning("Please upload an Excel file to proceed.")
+# # File uploader (hidden after upload)
+# if 'uploaded_file' not in st.session_state:
+#     st.session_state.uploaded_file = None
+
+# if st.session_state.uploaded_file is None:
+#     st.markdown("### Upload TML Excel File")
+#     uploaded_file = st.file_uploader("", type=["xlsx"], key="uploader")
+#     if uploaded_file is not None:
+#         st.session_state.uploaded_file = uploaded_file
+#         st.rerun()
+# else:
+#     uploaded_file = st.session_state.uploaded_file
+
+# if st.session_state.uploaded_file is None:
+#     st.info("Upload the TML Excel file to view the dashboard.")
 #     st.stop()
 
 # # Read Excel file from uploaded file object
@@ -739,3 +758,7 @@ st.markdown(centered_table_html, unsafe_allow_html=True)
 # </div>
 # """
 # st.markdown(centered_table_html, unsafe_allow_html=True)
+
+
+
+
