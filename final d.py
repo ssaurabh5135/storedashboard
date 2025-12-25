@@ -78,7 +78,7 @@ if st.session_state.uploaded_file is None:
     uploaded_file = st.file_uploader("", type=["xlsx"], key="uploader")
     if uploaded_file is not None:
         st.session_state.uploaded_file = uploaded_file
-        st.experimental_rerun()
+        st.rerun()
 else:
     uploaded_file = st.session_state.uploaded_file
 
