@@ -3,14 +3,11 @@ import pandas as pd
 from datetime import datetime
 import base64
 import os
-import gspread
-from google.oauth2.service_account import Credentials
-from google.auth import default
 
 # Set wide layout for full width
 st.set_page_config(layout="wide")
 
-# Google Sheet configuration - YOUR SHEET ID (extracted from your link)
+# YOUR SHEET ID - EXTRACTED FROM YOUR LINK ✅
 GOOGLE_SHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 
 # Custom CSS for full page coverage and table styling
@@ -61,12 +58,9 @@ st.markdown(
     .glass-table th {
         font-size: 12px;
     }
-
-    /* Glass table for TML Partwise GRN Pending Qty → Red text */
     .glass-table-red table {
         color: red !important;
     }
-
     .fixed-height {
         height: 250px;        
         overflow-y: auto;     
@@ -93,49 +87,57 @@ def norm(s: str) -> str:
     s = s.strip().upper()
     return s
 
-# ===================== Google Sheets Logic - NO SERVICE ACCOUNT NEEDED =====================
+# ===================== Google Sheets - PUBLIC ACCESS (NO AUTH NEEDED) =====================
 @st.cache_data
 def load_google_sheet(sheet_id):
-    """Load data from PUBLIC Google Sheet (simplest method)"""
+    """Load data from PUBLIC Google Sheet - headers in row 3"""
     try:
-        # Method 1: Try public access first (no auth needed)
-        SHEET_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=BTST - AVX AND TML&headers=1&range=A3:Z"
-        df = pd.read_csv(SHEET_URL)
-        st.success("✅ Public Google Sheet loaded successfully!")
-        return df
+        # Try multiple possible sheet names
+        sheet_names = ["BTST - AVX AND TML", "Sheet1", "BTST_TML_Copy"]
         
-    except Exception as e:
-        st.error(f"❌ Public access failed: {str(e)}")
-        st.info("""
-        **🚀 QUICK FIX - Make your sheet PUBLIC:**
-        1. Open your Google Sheet
-        2. Click **Share** → **Anyone with the link** → **Viewer**
-        3. Refresh this app ✅
+        for sheet_name in sheet_names:
+            try:
+                # CSV export URL - starts from row 3 (headers)
+                url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name.replace(' ', '%20')}"
+                df = pd.read_csv(url)
+                if not df.empty and len(df.columns) > 5:
+                    st.success(f"✅ Loaded '{sheet_name}' ({len(df)} rows)")
+                    return df
+            except:
+                continue
         
-        **OR use Service Account (Advanced):**
-        1. Create service account at console.cloud.google.com
-        2. Download JSON key as `service_account.json`
-        3. Share sheet with service account email
+        st.error("❌ Sheet not found. Please check:")
+        st.markdown("""
+        1. **Sheet tab name** is "BTST - AVX AND TML" 
+        2. **Share settings**: "Anyone with link" → **Viewer**
+        3. Data starts at **row 3**
         """)
         st.stop()
+        
+    except Exception as e:
+        st.error(f"Error loading sheet: {str(e)}")
+        st.stop()
 
-# Load data from Google Sheet
+# ===================== MAIN APP =====================
 if 'df' not in st.session_state:
     st.session_state.df = None
 
-st.info(f"📊 Loading from Google Sheet ID: `{GOOGLE_SHEET_ID}`")
+st.title("📊 TML BTST Dashboard")
+st.info(f"🔗 Loading from Sheet: `{GOOGLE_SHEET_ID}`")
 
-if st.button("🔄 Load Sheet Data") or st.session_state.df is None:
-    with st.spinner("Loading Google Sheet..."):
-        st.session_state.df = load_google_sheet(GOOGLE_SHEET_ID)
-        st.success("✅ Data loaded!")
-        st.rerun()
+col1, col2 = st.columns([3, 1])
+with col2:
+    if st.button("🔄 LOAD SHEET DATA", type="primary") or st.session_state.df is None:
+        with st.spinner("Loading Google Sheet..."):
+            st.session_state.df = load_google_sheet(GOOGLE_SHEET_ID)
+            st.rerun()
 
 if st.session_state.df is None:
-    st.info("👆 Click 'Load Sheet Data' to start")
+    st.info("👆 Click 'LOAD SHEET DATA' to begin")
     st.stop()
 
 df = st.session_state.df
+st.success(f"✅ Data loaded: {len(df)} rows, {len(df.columns)} columns")
 
 # ===================== Load TML Function =====================
 def load_tml(df):
@@ -145,7 +147,9 @@ def load_tml(df):
 
     def col(key_norm: str) -> str:
         if key_norm not in col_map:
-            raise KeyError(f"Normalized key '{key_norm}' not in {norm_cols}")
+            st.error(f"❌ Missing column: '{key_norm}'")
+            st.error(f"Available columns: {list(col_map.keys())}")
+            st.stop()
         return col_map[key_norm]
 
     KEY_AVX_CHALLAN = "AVX CHALLAN DATE"
@@ -194,14 +198,15 @@ tml_full = load_tml(df)
 
 # ===================== Customer Filter =====================
 customers = sorted(tml_full["CUSTOMER"].dropna().unique().tolist())
-selected_customer = st.selectbox("Customer", ["All"] + customers)
+selected_customer = st.selectbox("Select Customer", ["All"] + customers)
 if selected_customer == "All":
     tml = tml_full.copy()
 else:
     tml = tml_full[tml_full["CUSTOMER"] == selected_customer].copy()
 
-st.caption(f"Rows in current selection: {len(tml)} (Customer: {selected_customer})")
+st.caption(f"Rows in selection: {len(tml)} (Customer: {selected_customer})")
 
+# Calculate metrics
 btst_invoice_qty = int(tml["AVX_CHALLAN_DATE"].notna().sum())
 btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
@@ -266,32 +271,26 @@ body {{
 }}
 </style></head><body><div class="container">
     <div class="card">
-        <div class="center-content">
-            <div class="value-blue">{btst_invoice_qty}</div>
-            <div class="title-black">BTST Invoice Qty Rec'd from AVX</div>
-        </div>
+        <div class="value-blue">{btst_invoice_qty}</div>
+        <div class="title-black">BTST Invoice Qty Rec'd from AVX</div>
     </div>
     <div class="card">
-        <div class="center-content">
-            <div class="value-blue">{btst_handover_status}</div>
-            <div class="title-black">BTST Invoice Handover Status</div>
-        </div>
+        <div class="value-blue">{btst_handover_status}</div>
+        <div class="title-black">BTST Invoice Handover Status</div>
     </div>
     <div class="card">
-        <div class="center-content">
-            <div class="value-blue">{btst_tml_grn_status}</div>
-            <div class="title-black">BTST TML GRN Status</div>
-        </div>
+        <div class="value-blue">{btst_tml_grn_status}</div>
+        <div class="title-black">BTST TML GRN Status</div>
     </div>
     <div class="card">
-        <div class="center-content">
-            <div class="value-blue">{avg_days}</div>
-            <div class="title-black">TML GRN Average Days</div>
-        </div>
+        <div class="value-blue">{avg_days}</div>
+        <div class="title-black">TML GRN Average Days</div>
     </div>
 </div></body></html>
 """
 st.markdown(html_template, unsafe_allow_html=True)
+
+st.markdown("---")
 
 # ===================== SECOND ROW =====================
 r2c1, r2c2 = st.columns([1, 1])
@@ -368,18 +367,19 @@ with r2c2:
         table_html += html_rows
         table_html += "</table>"
     else:
-        table_html = "<div style='text-align: center;'>No rows with Q−N days for ageing in this selection.</div>"
+        table_html = "<div style='text-align: center;'>No data for ageing analysis</div>"
 
     centered_table_html = f"""
     <div class="glass-table fixed-height">
-        <h3>TML GRN Ageing Day</h3>
+        <h3>TML GRN Ageing (Days)</h3>
         {table_html}
     </div>
     """
     st.markdown(centered_table_html, unsafe_allow_html=True)
 
 # ===================== THIRD ROW: Partwise Material Receipt Qty =====================
-st.write("---")
+st.markdown("---")
+tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
 
 # Only keep rows with PHY_RCPT_DATE and non-zero SUPPLIER_QTY
 df_age = tml_valid.dropna(subset=["PHY_RCPT_DATE"]).copy()
@@ -400,7 +400,7 @@ mat_pivot = df_age.pivot_table(
     fill_value=0
 ).reindex(columns=days, fill_value=0)
 
-# Keep order same as original PART_NO in uploaded data
+# Keep order same as original PART_NO
 mat_pivot = mat_pivot.reindex(tml_valid["PART_NO"].unique(), fill_value=0)
 mat_pivot.columns = [str(d) for d in mat_pivot.columns]
 
@@ -415,15 +415,19 @@ mat_pivot = mat_pivot.reset_index()
 
 # Generate HTML table
 table_html = mat_pivot.to_html(escape=False, index=False)
-table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART_NO</th>')
+table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART NO</th>')
 
 centered_table_html = f"""
 <div class="glass-table">
-    <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
+    <h3>Partwise Material Receipt Qty (Current Month)</h3>
     <div style='text-align: center;'>{table_html}</div>
 </div>
 """
 st.markdown(centered_table_html, unsafe_allow_html=True)
+
+st.markdown("---")
+st.caption("✅ **Dashboard fully loaded!** Update your Google Sheet → Click 'LOAD SHEET DATA' to refresh.")
+
 
 
 
