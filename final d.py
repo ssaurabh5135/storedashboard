@@ -4,9 +4,12 @@ from datetime import datetime
 import base64
 import os
 
-# ========== PASTE YOUR GOOGLE DRIVE EXCEL LINK HERE (Line 7) ==========
-GOOGLE_DRIVE_EXCEL_URL = "https://docs.google.com/spreadsheets/d/1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM/edit?usp=drive_link&ouid=106046603571770605008&rtpof=true&sd=true"
+# ========== PASTE YOUR SPREADSHEET ID HERE (ONLY ID, Line 7) ==========
+SPREADSHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 # =====================================================================
+
+# Auto-build full URL from ID
+GOOGLE_DRIVE_EXCEL_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=xlsx&gid=0"
 
 # Set wide layout for full width
 st.set_page_config(layout="wide")
@@ -28,7 +31,6 @@ st.markdown(
         margin: 0;
         max-width: initial;
     }
-
     /* Glass table styling */
     .glass-table {
         background: rgba(255,255,255,0.1);
@@ -82,19 +84,27 @@ def get_base64(bin_file):
 BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
 
-# Load Excel from Google Drive (REPLACED UPLOAD SECTION)
+# FIXED: Load Excel from Google Drive with openpyxl engine
 @st.cache_data(ttl=300)
 def load_from_drive(url):
     try:
-        df = pd.read_excel(url, sheet_name="BTST - AVX AND TML", header=2)
+        df = pd.read_excel(
+            url, 
+            sheet_name="BTST - AVX AND TML", 
+            header=2,
+            engine='openpyxl'
+        )
         st.success("✅ Data loaded from Google Drive!")
         return df
+    except ImportError:
+        st.error("❌ Install: `pip install openpyxl`")
+        st.stop()
     except Exception as e:
-        st.error(f"❌ Error loading Google Drive Excel: {str(e)}")
-        st.info("💡 Make sure your Google Sheet is shared as 'Anyone with link can view'")
+        st.error(f"❌ Error: {str(e)}")
+        st.info("✅ Google Sheet must be 'Anyone with link can VIEW'")
         st.stop()
 
-# Load data from Google Drive
+# Load data
 df = load_from_drive(GOOGLE_DRIVE_EXCEL_URL)
 
 def norm(s: str) -> str:
@@ -373,6 +383,7 @@ centered_table_html = f"""
 </div>
 """
 st.markdown(centered_table_html, unsafe_allow_html=True)
+
 
 
 
