@@ -5,12 +5,13 @@ import base64
 import os
 import gspread
 from google.oauth2.service_account import Credentials
+from google.auth import default
 
 # Set wide layout for full width
 st.set_page_config(layout="wide")
 
-# Google Sheet configuration - CHANGE THIS FILE ID
-GOOGLE_SHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"  # Paste your Google Sheet ID here
+# Google Sheet configuration - YOUR SHEET ID (extracted from your link)
+GOOGLE_SHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 
 # Custom CSS for full page coverage and table styling
 st.markdown(
@@ -20,7 +21,7 @@ st.markdown(
     .stApp {
         max-width: 100%;
         padding: 0;
-        background-color: white;  /* fallback background */
+        background-color: white;
     }
     /* Main container */
     .st-emotion-cache-1jicfl2 {
@@ -29,16 +30,6 @@ st.markdown(
         margin: 0;
         max-width: initial;
     }
-
-    /* ================= BACKGROUND IMAGE (COMMENTED) =================
-    .stApp {
-        background-image: url("data:image/jpg;base64,INSERT_BASE64_HERE");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }
-    ============================================================================== */
 
     /* Glass table styling */
     .glass-table {
@@ -52,14 +43,14 @@ st.markdown(
         overflow-x: auto;
     }
     .glass-table h3 {
-        color: black;  /* Title color black for white background */
+        color: black;
         font-family: 'Fredoka', sans-serif;
         text-align: center;
     }
     .glass-table table {
         width: 100%;
         border-collapse: collapse;
-        color: black;  /* Table content black for Partwise Material Receipt Qty */
+        color: black;
         font-family: 'Fredoka', sans-serif;
     }
     .glass-table th, .glass-table td {
@@ -80,12 +71,6 @@ st.markdown(
         height: 250px;        
         overflow-y: auto;     
     }
-
-    /* Sheet ID input styling */
-    .stTextInput > div > div > input {
-        font-size: 16px !important;
-        padding: 10px !important;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -101,51 +86,6 @@ def get_base64(bin_file):
 
 BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
-# Background image insertion commented
-# st.markdown(f"<style>.stApp {{ background-image: url('data:image/jpg;base64,{bin_str}'); }}</style>", unsafe_allow_html=True)
-
-# ===================== Google Sheets Logic =====================
-@st.cache_data
-def load_google_sheet(sheet_id):
-    """Load data from Google Sheet"""
-    try:
-        # Use service account credentials from secrets (recommended for production)
-        # For local testing, you can also use default credentials
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        
-        # Try to use st.secrets first (for Streamlit Cloud)
-        if "GCP_SERVICE_ACCOUNT" in st.secrets:
-            creds = Credentials.from_service_account_info(
-                st.secrets["GCP_SERVICE_ACCOUNT"],
-                scopes=scope
-            )
-        else:
-            # Fallback for local development
-            creds = Credentials.from_service_account_file(
-                "service_account.json",  # Place your service account JSON here for local
-                scopes=scope
-            )
-        
-        client = gspread.authorize(creds)
-        sheet = client.open_by_key(sheet_id).worksheet("BTST - AVX AND TML")
-        
-        # Read data starting from row 3 (headers in row 3, data from row 4)
-        data = sheet.get_all_values()[2:]  # Skip first 2 rows (rows 0,1), start from row 3
-        df = pd.DataFrame(data[1:], columns=data[0])  # headers from first row of data (row 3)
-        return df
-    except Exception as e:
-        st.error(f"Error loading Google Sheet: {str(e)}")
-        st.info("""
-        **To fix this:**
-        1. Make sure the SHEET ID is correct above
-        2. Share the Google Sheet with your service account email
-        3. For Streamlit Cloud: Add service account JSON to `.streamlit/secrets.toml`
-        4. For local: Place `service_account.json` in app folder
-        """)
-        st.stop()
 
 def norm(s: str) -> str:
     s = str(s).replace(" ", " ")
@@ -153,24 +93,46 @@ def norm(s: str) -> str:
     s = s.strip().upper()
     return s
 
+# ===================== Google Sheets Logic - NO SERVICE ACCOUNT NEEDED =====================
+@st.cache_data
+def load_google_sheet(sheet_id):
+    """Load data from PUBLIC Google Sheet (simplest method)"""
+    try:
+        # Method 1: Try public access first (no auth needed)
+        SHEET_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=BTST - AVX AND TML&headers=1&range=A3:Z"
+        df = pd.read_csv(SHEET_URL)
+        st.success("✅ Public Google Sheet loaded successfully!")
+        return df
+        
+    except Exception as e:
+        st.error(f"❌ Public access failed: {str(e)}")
+        st.info("""
+        **🚀 QUICK FIX - Make your sheet PUBLIC:**
+        1. Open your Google Sheet
+        2. Click **Share** → **Anyone with the link** → **Viewer**
+        3. Refresh this app ✅
+        
+        **OR use Service Account (Advanced):**
+        1. Create service account at console.cloud.google.com
+        2. Download JSON key as `service_account.json`
+        3. Share sheet with service account email
+        """)
+        st.stop()
+
 # Load data from Google Sheet
 if 'df' not in st.session_state:
     st.session_state.df = None
 
-# Allow changing sheet ID easily
-GOOGLE_SHEET_ID = st.text_input(
-    "Google Sheet ID", 
-    value=GOOGLE_SHEET_ID,
-    help="Paste your Google Sheet ID here (from URL)"
-)
+st.info(f"📊 Loading from Google Sheet ID: `{GOOGLE_SHEET_ID}`")
 
-if st.button("Load Sheet") or st.session_state.df is None:
+if st.button("🔄 Load Sheet Data") or st.session_state.df is None:
     with st.spinner("Loading Google Sheet..."):
         st.session_state.df = load_google_sheet(GOOGLE_SHEET_ID)
-        st.success("✅ Google Sheet loaded successfully!")
+        st.success("✅ Data loaded!")
+        st.rerun()
 
 if st.session_state.df is None:
-    st.info("👆 Enter Google Sheet ID and click 'Load Sheet'")
+    st.info("👆 Click 'Load Sheet Data' to start")
     st.stop()
 
 df = st.session_state.df
@@ -462,6 +424,7 @@ centered_table_html = f"""
 </div>
 """
 st.markdown(centered_table_html, unsafe_allow_html=True)
+
 
 
 
