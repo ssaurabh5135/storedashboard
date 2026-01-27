@@ -3,13 +3,14 @@ import pandas as pd
 from datetime import datetime
 import base64
 import os
+import io
 
-# ========== PASTE YOUR SPREADSHEET ID HERE (ONLY ID, Line 7) ==========
+# ========== YOUR GOOGLE SHEET CONFIGURATION ==========
 SPREADSHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
-# =====================================================================
+GID = "0"  # First sheet (change if needed)
+SHEET_NAME = "BTST - AVX AND TML"
 
-# FIXED: Use CSV export (more reliable than XLSX)
-GOOGLE_DRIVE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
+GOOGLE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID}"
 
 # Set wide layout for full width
 st.set_page_config(layout="wide")
@@ -68,29 +69,92 @@ st.markdown(
         height: 250px;        
         overflow-y: auto;     
     }
+    .success-box {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+        padding: 12px;
+        border-radius: 8px;
+        margin: 10px 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# FIXED: Load CSV from Google Drive (100% reliable)
-@st.cache_data(ttl=300)
-def load_from_drive_csv(url):
-    try:
-        df = pd.read_csv(url)
-        # Skip first 2 header rows to match original Excel (header=2)
-        df = df.iloc[2:].reset_index(drop=True)
-        st.success("✅ Data loaded from Google Drive!")
-        return df
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-        st.info("✅ CRITICAL: Google Sheet must be 'Anyone with link can VIEW'")
-        st.info("✅ Make sure sheet name 'BTST - AVX AND TML' exists")
+# Function to encode image as base64
+def get_base64(bin_file):
+    if os.path.exists(bin_file):
+        with open(bin_file, 'rb') as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    return ""
+
+BACKGROUND_IMAGE = "dark.jpg"
+bin_str = get_base64(BACKGROUND_IMAGE)
+
+# ===================== LOAD FROM GOOGLE SHEETS =====================
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_from_google_sheets():
+    """Load data from Google Sheets - 3 fallback methods"""
+    methods = [
+        f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID}",
+        f"https://docs.google.com/spreadsheets/u/0/d/{SPREADSHEET_ID}/export?format=csv&gid={GID}",
+        f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME.replace(' ', '%20').replace('-', '%20')}&gid={GID}",
+    ]
+    
+    for i, url in enumerate(methods, 1):
+        try:
+            df = pd.read_csv(url)
+            if not df.empty and len(df.columns) > 5:
+                # Skip first 2 header rows to match original Excel
+                df = df.iloc[2:].reset_index(drop=True)
+                return df
+        except Exception as e:
+            continue
+    
+    # If all methods fail, show detailed error
+    st.error("❌ Cannot load Google Sheet data")
+    st.markdown("""
+    <div class="success-box">
+    <strong>🚨 QUICK FIX:</strong><br>
+    1. Open: https://docs.google.com/spreadsheets/d/1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM/edit<br>
+    2. Click <strong>SHARE</strong> → "Anyone with the link" → <strong>Viewer</strong><br>
+    3. Test this link in browser (should download CSV):<br>
+    https://docs.google.com/spreadsheets/d/1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM/export?format=csv&gid=0
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+# Try Google Sheets first, fallback to file upload
+try:
+    df = load_from_google_sheets()
+    data_source = "Google Sheets ✅"
+    st.success(f"✅ Loaded {len(df)} rows from Google Sheets!")
+except:
+    st.warning("⚠️ Google Sheets failed, using file upload...")
+    data_source = "File Upload"
+    
+    if 'uploaded_file' not in st.session_state:
+        st.session_state.uploaded_file = None
+
+    if st.session_state.uploaded_file is None:
+        uploaded_file = st.file_uploader("Upload TML Excel File", type=["xlsx"])
+        if uploaded_file is not None:
+            st.session_state.uploaded_file = uploaded_file
+            st.rerun()
+    else:
+        uploaded_file = st.session_state.uploaded_file
+
+    if st.session_state.uploaded_file is None:
+        st.info("👆 Upload Excel file OR fix Google Sheet sharing settings above")
         st.stop()
 
-# Load data
-df = load_from_drive_csv(GOOGLE_DRIVE_CSV_URL)
+    df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
 
+st.caption(f"📊 Data Source: {data_source} | Rows: {len(df)}")
+
+# ===================== Load TML Function =====================
 def norm(s: str) -> str:
     s = str(s).replace(" ", " ")
     s = " ".join(s.split())
@@ -145,6 +209,8 @@ def load_tml(df):
     return df
 
 tml_full = load_tml(df)
+
+# ===================== Customer Filter =====================
 customers = sorted(tml_full["CUSTOMER"].dropna().unique().tolist())
 selected_customer = st.selectbox("Customer", ["All"] + customers)
 if selected_customer == "All":
@@ -159,6 +225,7 @@ btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
 avg_days = 0 if tml["Q_MINUS_N_DAYS"].dropna().empty else round(tml["Q_MINUS_N_DAYS"].dropna().mean())
 
+# ===================== FIRST ROW: HTML CARDS =====================
 html_template = f"""
 <!doctype html>
 <html><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700;900&display=swap" rel="stylesheet"><style>
@@ -244,8 +311,10 @@ body {{
 """
 st.markdown(html_template, unsafe_allow_html=True)
 
+# ===================== SECOND ROW =====================
 r2c1, r2c2 = st.columns([1, 1])
 
+# ---------- LEFT: TML Part Wise GRN Pending Qty (Red Text) ----------
 with r2c1:
     tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
     diff = (tml_valid["SUPPLIER_QTY"].fillna(0) - tml_valid["GRN_QTY"].fillna(0))
@@ -263,6 +332,7 @@ with r2c1:
     """
     st.markdown(centered_table_html, unsafe_allow_html=True)
 
+# ---------- RIGHT: TML GRN Ageing (Colored Buckets) ----------
 with r2c2:
     age_df = tml_valid.dropna(subset=["CUSTOMER", "PHY_RCPT_DATE"]).copy()
     age_df["AGEING_DAYS"] = pd.NA
@@ -272,14 +342,16 @@ with r2c2:
     age_df.loc[mask_no_challan, "AGEING_DAYS"] = (pd.to_datetime(datetime.today().date()) - age_df.loc[mask_no_challan, "PHY_RCPT_DATE"]).dt.days
 
     def age_bucket(d):
+        if pd.isna(d): return ""
         d = int(d)
         if d <= 7: return "0-7"
         if d <= 15: return "8-15"
         if d <= 25: return "16-25"
         return ">25"
 
-    if not age_df.empty:
+    if not age_df.empty and age_df["AGEING_DAYS"].notna().any():
         age_df["AGE_BUCKET"] = age_df["AGEING_DAYS"].apply(age_bucket)
+        age_df = age_df[age_df["AGE_BUCKET"] != ""]
         age_pivot = age_df.pivot_table(
             index="AGE_BUCKET",
             columns="CUSTOMER",
@@ -301,11 +373,11 @@ with r2c2:
         html_rows = ""
         for _, row in age_pivot.iterrows():
             bucket = row["Bucket"]
-            bgcolor = color_map.get(bucket, {}).get("bg", "")
-            txtcolor = color_map.get(bucket, {}).get("color", "#ffffff")
+            bgcolor = color_map.get(bucket, {}).get("bg", "#ffffff")
+            txtcolor = color_map.get(bucket, {}).get("color", "#000000")
             html_rows += "<tr style='background-color:{}; color:{};'>".format(bgcolor, txtcolor)
             for col_name in age_pivot.columns:
-                html_rows += f"<td>{row[col_name]}</td>"
+                html_rows += f"<td>{int(row[col_name])}</td>"
             html_rows += "</tr>"
 
         table_html = "<table style='margin:auto; border-collapse: collapse; color:black;'>"
@@ -316,7 +388,7 @@ with r2c2:
         table_html += html_rows
         table_html += "</table>"
     else:
-        table_html = "<div style='text-align: center;'>No rows with Q−N days for ageing in this selection.</div>"
+        table_html = "<div style='text-align: center;'>No ageing data available</div>"
 
     centered_table_html = f"""
     <div class="glass-table fixed-height">
@@ -326,47 +398,56 @@ with r2c2:
     """
     st.markdown(centered_table_html, unsafe_allow_html=True)
 
+# ===================== THIRD ROW: Partwise Material Receipt Qty =====================
 st.write("---")
 
+tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
 df_age = tml_valid.dropna(subset=["PHY_RCPT_DATE"]).copy()
 df_age = df_age[df_age["SUPPLIER_QTY"].fillna(0) > 0]
 
-df_age["RCPT_DAY"] = df_age["PHY_RCPT_DATE"].dt.day.astype(int)
+if not df_age.empty:
+    df_age["RCPT_DAY"] = df_age["PHY_RCPT_DATE"].dt.day.astype(int)
 
-today = pd.to_datetime(datetime.today().date())
-month_end = today.replace(day=pd.Period(today, freq='M').days_in_month)
-days = list(range(1, month_end.day + 1))
+    today = pd.to_datetime(datetime.today().date())
+    month_end = today.replace(day=pd.Period(today, freq='M').days_in_month)
+    days = list(range(1, month_end.day + 1))
 
-mat_pivot = df_age.pivot_table(
-    index="PART_NO",
-    columns="RCPT_DAY",
-    values="SUPPLIER_QTY",
-    aggfunc="sum",
-    fill_value=0
-).reindex(columns=days, fill_value=0)
+    mat_pivot = df_age.pivot_table(
+        index="PART_NO",
+        columns="RCPT_DAY",
+        values="SUPPLIER_QTY",
+        aggfunc="sum",
+        fill_value=0
+    ).reindex(columns=days, fill_value=0)
 
-mat_pivot = mat_pivot.reindex(tml_valid["PART_NO"].unique(), fill_value=0)
-mat_pivot.columns = [str(d) for d in mat_pivot.columns]
+    mat_pivot = mat_pivot.reindex(tml_valid["PART_NO"].unique(), fill_value=0)
+    mat_pivot.columns = [str(d) for d in mat_pivot.columns]
 
-def format_qty(x):
-    if x == 0 or pd.isna(x):
-        return ""
-    return str(int(x))
+    def format_qty(x):
+        if x == 0 or pd.isna(x):
+            return ""
+        return str(int(x))
 
-mat_pivot = mat_pivot.applymap(format_qty)
-mat_pivot = mat_pivot.reset_index()
+    mat_pivot = mat_pivot.applymap(format_qty)
+    mat_pivot = mat_pivot.reset_index()
 
-table_html = mat_pivot.to_html(escape=False, index=False)
-table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART_NO</th>')
+    table_html = mat_pivot.to_html(escape=False, index=False)
+    table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART_NO</th>')
 
-centered_table_html = f"""
-<div class="glass-table">
-    <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
-    <div style='text-align: center;'>{table_html}</div>
-</div>
-"""
-st.markdown(centered_table_html, unsafe_allow_html=True)
-
+    centered_table_html = f"""
+    <div class="glass-table">
+        <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
+        <div style='text-align: center;'>{table_html}</div>
+    </div>
+    """
+    st.markdown(centered_table_html, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="glass-table">
+        <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
+        <div style='text-align: center; padding: 40px; color: #666;'>No material receipt data available</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 
