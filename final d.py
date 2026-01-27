@@ -7,7 +7,7 @@ import io
 
 # ========== YOUR GOOGLE SHEET CONFIGURATION ==========
 SPREADSHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
-GID = "0"  # First sheet (change if needed)
+GID = "0"  
 SHEET_NAME = "BTST - AVX AND TML"
 
 GOOGLE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID}"
@@ -94,7 +94,7 @@ BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
 
 # ===================== LOAD FROM GOOGLE SHEETS =====================
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=300)
 def load_from_google_sheets():
     """Load data from Google Sheets - 3 fallback methods"""
     methods = [
@@ -107,26 +107,23 @@ def load_from_google_sheets():
         try:
             df = pd.read_csv(url)
             if not df.empty and len(df.columns) > 5:
-                # Skip first 2 header rows to match original Excel
                 df = df.iloc[2:].reset_index(drop=True)
                 return df
-        except Exception as e:
+        except:
             continue
     
-    # If all methods fail, show detailed error
     st.error("❌ Cannot load Google Sheet data")
     st.markdown("""
     <div class="success-box">
     <strong>🚨 QUICK FIX:</strong><br>
     1. Open: https://docs.google.com/spreadsheets/d/1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM/edit<br>
     2. Click <strong>SHARE</strong> → "Anyone with the link" → <strong>Viewer</strong><br>
-    3. Test this link in browser (should download CSV):<br>
-    https://docs.google.com/spreadsheets/d/1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM/export?format=csv&gid=0
+    3. Test: https://docs.google.com/spreadsheets/d/1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM/export?format=csv&gid=0
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# Try Google Sheets first, fallback to file upload
+# Load data (Google Sheets OR File Upload)
 try:
     df = load_from_google_sheets()
     data_source = "Google Sheets ✅"
@@ -147,67 +144,115 @@ except:
         uploaded_file = st.session_state.uploaded_file
 
     if st.session_state.uploaded_file is None:
-        st.info("👆 Upload Excel file OR fix Google Sheet sharing settings above")
+        st.info("👆 Upload Excel file OR fix Google Sheet sharing")
         st.stop()
 
     df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
 
 st.caption(f"📊 Data Source: {data_source} | Rows: {len(df)}")
 
-# ===================== Load TML Function =====================
+# 🆕 DEBUG: Show first few columns
+st.write("**📋 Column Names Found:**")
+st.write(df.columns.tolist()[:10])  # Show first 10 columns
+st.write("**📋 Sample Data (first 3 rows):**")
+st.write(df.head(3))
+
+# ===================== FIXED Load TML Function =====================
 def norm(s: str) -> str:
+    if pd.isna(s):
+        return ""
     s = str(s).replace(" ", " ")
     s = " ".join(s.split())
     s = s.strip().upper()
     return s
 
 def load_tml(df):
+    """Robust column mapping with debugging"""
     raw_cols = list(df.columns)
     norm_cols = [norm(c) for c in raw_cols]
+    
+    st.write("**🔍 Normalized Column Names:**")
+    for i, (raw, normed) in enumerate(zip(raw_cols[:10], norm_cols[:10])):
+        st.write(f"{i}: '{raw}' → '{normed}'")
+    
     col_map = dict(zip(norm_cols, raw_cols))
 
-    def col(key_norm: str) -> str:
-        if key_norm not in col_map:
-            raise KeyError(f"Normalized key '{key_norm}' not in {norm_cols}")
-        return col_map[key_norm]
+    # Column keys with multiple possible variations
+    COLUMN_KEYS = {
+        "AVX_CHALLAN_DATE": ["AVX CHALLAN DATE", "AVX_CHALLAN_DATE", "AVX CHALLAN", "CHALLAN DATE"],
+        "HANDOVER_DATE": ["AVX INVOICE ACK. HANDOVER DATE", "HANDOVER DATE", "INVOICE ACK. HANDOVER DATE", "HANDOVER"],
+        "TML_CHALLAN_DATE": ["TML CHALLAN DATE", "TML_CHALLAN_DATE", "TML CHALLAN", "GRN DATE"],
+        "PHY_RCPT_DATE": ["AVX PHY MATERIAL RECIPT DATE", "PHY_RCPT_DATE", "PHYSICAL RECEIPT DATE", "MATERIAL RECEIPT DATE", "PHY MATERIAL RECEIPT"],
+        "PART_NO": ["PART NO.", "PART_NO", "PART NO", "PART NUMBER"],
+        "CUSTOMER": ["SUPPLIER NAME", "CUSTOMER", "SUPPLIER"],
+        "SUPP_QTY": ["QTY", "SUPPLIER QTY", "SUPPLIED QTY", "INVOICE QTY"],
+        "GRN_QTY": ["QTY (GRN)", "GRN_QTY", "GRN QTY", "RECEIVED QTY"]
+    }
 
-    KEY_AVX_CHALLAN = "AVX CHALLAN DATE"
-    KEY_HANDOVER = "AVX INVOICE ACK. HANDOVER DATE"
-    KEY_TML_CHALLAN = "TML CHALLAN DATE"
-    KEY_PHY_RCPT = "AVX PHY MATERIAL RECIPT DATE"
-    KEY_PART_NO = "PART NO."
-    KEY_CUSTOMER = "SUPPLIER NAME"
-    KEY_SUPP_QTY = "QTY"
-    KEY_GRN_QTY = "QTY (GRN)"
+    def find_column(key_variations):
+        """Find column by any variation"""
+        for variation in key_variations:
+            norm_var = norm(variation)
+            if norm_var in col_map:
+                return col_map[norm_var]
+        return None
 
-    df["AVX_CHALLAN_DATE"] = pd.to_datetime(df[col(KEY_AVX_CHALLAN)], errors="coerce", dayfirst=True)
-    df["HANDOVER_DATE"] = pd.to_datetime(df[col(KEY_HANDOVER)], errors="coerce", dayfirst=True)
-    df["TML_CHALLAN_DATE"] = pd.to_datetime(df[col(KEY_TML_CHALLAN)], errors="coerce", dayfirst=True)
-    df["PHY_RCPT_DATE"] = pd.to_datetime(df[col(KEY_PHY_RCPT)], errors="coerce", dayfirst=True)
+    # Map columns safely
+    columns_found = {}
+    for key, variations in COLUMN_KEYS.items():
+        col = find_column(variations)
+        columns_found[key] = col
+        if col:
+            st.success(f"✅ Found {key}: '{col}'")
+        else:
+            st.error(f"❌ Missing {key}")
+            st.write(f"   Tried: {[norm(v) for v in variations]}")
 
-    df["SUPPLIER_QTY"] = pd.to_numeric(df[col(KEY_SUPP_QTY)], errors="coerce")
-    df["GRN_QTY"] = pd.to_numeric(df[col(KEY_GRN_QTY)], errors="coerce")
+    # Stop if critical columns missing
+    required_cols = ["PART_NO", "CUSTOMER", "SUPP_QTY", "GRN_QTY"]
+    missing = [k for k, v in columns_found.items() if k in required_cols and v is None]
+    if missing:
+        st.error(f"🚨 CRITICAL: Missing columns: {missing}")
+        st.stop()
 
-    df["PART_NO"] = df[col(KEY_PART_NO)].apply(lambda x: str(int(x)) if pd.notna(x) and float(x).is_integer() else str(x) if pd.notna(x) else "")
-    df["CUSTOMER"] = df[col(KEY_CUSTOMER)].astype(str).fillna("").replace("nan","")
+    # Process data with found columns
+    if columns_found["AVX_CHALLAN_DATE"]:
+        df["AVX_CHALLAN_DATE"] = pd.to_datetime(df[columns_found["AVX_CHALLAN_DATE"]], errors="coerce", dayfirst=True)
+    if columns_found["HANDOVER_DATE"]:
+        df["HANDOVER_DATE"] = pd.to_datetime(df[columns_found["HANDOVER_DATE"]], errors="coerce", dayfirst=True)
+    if columns_found["TML_CHALLAN_DATE"]:
+        df["TML_CHALLAN_DATE"] = pd.to_datetime(df[columns_found["TML_CHALLAN_DATE"]], errors="coerce", dayfirst=True)
+    if columns_found["PHY_RCPT_DATE"]:
+        df["PHY_RCPT_DATE"] = pd.to_datetime(df[columns_found["PHY_RCPT_DATE"]], errors="coerce", dayfirst=True)
+
+    df["SUPPLIER_QTY"] = pd.to_numeric(df[columns_found["SUPP_QTY"]], errors="coerce")
+    df["GRN_QTY"] = pd.to_numeric(df[columns_found["GRN_QTY"]], errors="coerce")
+
+    df["PART_NO"] = df[columns_found["PART_NO"]].apply(
+        lambda x: str(int(x)) if pd.notna(x) and float(x).is_integer() else str(x) if pd.notna(x) else ""
+    )
+    df["CUSTOMER"] = df[columns_found["CUSTOMER"]].astype(str).fillna("").replace("nan", "")
 
     df = df[df["PART_NO"].str.strip() != ""]
 
     today = pd.to_datetime(datetime.today().date())
     
     df["AGE_DAYS"] = pd.NA
-    mask_q = df["TML_CHALLAN_DATE"].notna()
-    df.loc[mask_q, "AGE_DAYS"] = (today - df.loc[mask_q, "TML_CHALLAN_DATE"]).dt.days
+    if "TML_CHALLAN_DATE" in df.columns and df["TML_CHALLAN_DATE"].notna().any():
+        mask_q = df["TML_CHALLAN_DATE"].notna()
+        df.loc[mask_q, "AGE_DAYS"] = (today - df.loc[mask_q, "TML_CHALLAN_DATE"]).dt.days
 
     df["Q_MINUS_N_DAYS"] = pd.NA
-    mask_qn = df["TML_CHALLAN_DATE"].notna() & df["PHY_RCPT_DATE"].notna()
-    df.loc[mask_qn, "Q_MINUS_N_DAYS"] = (df.loc[mask_qn, "TML_CHALLAN_DATE"] - df.loc[mask_qn, "PHY_RCPT_DATE"]).dt.days
+    if "TML_CHALLAN_DATE" in df.columns and "PHY_RCPT_DATE" in df.columns:
+        mask_qn = df["TML_CHALLAN_DATE"].notna() & df["PHY_RCPT_DATE"].notna()
+        df.loc[mask_qn, "Q_MINUS_N_DAYS"] = (df.loc[mask_qn, "TML_CHALLAN_DATE"] - df.loc[mask_qn, "PHY_RCPT_DATE"]).dt.days
 
-    mask_no_challan = df["TML_CHALLAN_DATE"].isna() & df["PHY_RCPT_DATE"].notna()
-    df.loc[mask_no_challan, "Q_MINUS_N_DAYS"] = (today - df.loc[mask_no_challan, "PHY_RCPT_DATE"]).dt.days
+        mask_no_challan = df["TML_CHALLAN_DATE"].isna() & df["PHY_RCPT_DATE"].notna()
+        df.loc[mask_no_challan, "Q_MINUS_N_DAYS"] = (today - df.loc[mask_no_challan, "PHY_RCPT_DATE"]).dt.days
 
     return df
 
+# Process data
 tml_full = load_tml(df)
 
 # ===================== Customer Filter =====================
@@ -220,9 +265,9 @@ else:
 
 st.caption(f"Rows in current selection: {len(tml)} (Customer: {selected_customer})")
 
-btst_invoice_qty = int(tml["AVX_CHALLAN_DATE"].notna().sum())
-btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
-btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
+btst_invoice_qty = int(tml["AVX_CHALLAN_DATE"].notna().sum()) if "AVX_CHALLAN_DATE" in tml.columns else 0
+btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum()) if "HANDOVER_DATE" in tml.columns else 0
+btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum()) if "TML_CHALLAN_DATE" in tml.columns else 0
 avg_days = 0 if tml["Q_MINUS_N_DAYS"].dropna().empty else round(tml["Q_MINUS_N_DAYS"].dropna().mean())
 
 # ===================== FIRST ROW: HTML CARDS =====================
@@ -311,10 +356,10 @@ body {{
 """
 st.markdown(html_template, unsafe_allow_html=True)
 
+# [Rest of your dashboard code continues exactly the same...]
 # ===================== SECOND ROW =====================
 r2c1, r2c2 = st.columns([1, 1])
 
-# ---------- LEFT: TML Part Wise GRN Pending Qty (Red Text) ----------
 with r2c1:
     tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
     diff = (tml_valid["SUPPLIER_QTY"].fillna(0) - tml_valid["GRN_QTY"].fillna(0))
@@ -332,7 +377,6 @@ with r2c1:
     """
     st.markdown(centered_table_html, unsafe_allow_html=True)
 
-# ---------- RIGHT: TML GRN Ageing (Colored Buckets) ----------
 with r2c2:
     age_df = tml_valid.dropna(subset=["CUSTOMER", "PHY_RCPT_DATE"]).copy()
     age_df["AGEING_DAYS"] = pd.NA
@@ -398,7 +442,7 @@ with r2c2:
     """
     st.markdown(centered_table_html, unsafe_allow_html=True)
 
-# ===================== THIRD ROW: Partwise Material Receipt Qty =====================
+# ===================== THIRD ROW =====================
 st.write("---")
 
 tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
@@ -407,7 +451,6 @@ df_age = df_age[df_age["SUPPLIER_QTY"].fillna(0) > 0]
 
 if not df_age.empty:
     df_age["RCPT_DAY"] = df_age["PHY_RCPT_DATE"].dt.day.astype(int)
-
     today = pd.to_datetime(datetime.today().date())
     month_end = today.replace(day=pd.Period(today, freq='M').days_in_month)
     days = list(range(1, month_end.day + 1))
@@ -448,6 +491,7 @@ else:
         <div style='text-align: center; padding: 40px; color: #666;'>No material receipt data available</div>
     </div>
     """, unsafe_allow_html=True)
+
 
 
 
