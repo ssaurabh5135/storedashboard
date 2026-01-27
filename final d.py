@@ -1,15 +1,16 @@
-import streamlit as st 
+import streamlit as st  
 import pandas as pd
 from datetime import datetime
 import base64
 import os
-
-# ========== YOUR GOOGLE SHEET CONFIGURATION ==========
-SPREADSHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
-GID = "0"
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Set wide layout for full width
 st.set_page_config(layout="wide")
+
+# Google Sheet configuration - CHANGE THIS FILE ID
+GOOGLE_SHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"  # Paste your Google Sheet ID here
 
 # Custom CSS for full page coverage and table styling
 st.markdown(
@@ -19,7 +20,7 @@ st.markdown(
     .stApp {
         max-width: 100%;
         padding: 0;
-        background-color: white;
+        background-color: white;  /* fallback background */
     }
     /* Main container */
     .st-emotion-cache-1jicfl2 {
@@ -28,6 +29,17 @@ st.markdown(
         margin: 0;
         max-width: initial;
     }
+
+    /* ================= BACKGROUND IMAGE (COMMENTED) =================
+    .stApp {
+        background-image: url("data:image/jpg;base64,INSERT_BASE64_HERE");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    ============================================================================== */
+
     /* Glass table styling */
     .glass-table {
         background: rgba(255,255,255,0.1);
@@ -40,14 +52,14 @@ st.markdown(
         overflow-x: auto;
     }
     .glass-table h3 {
-        color: black;
+        color: black;  /* Title color black for white background */
         font-family: 'Fredoka', sans-serif;
         text-align: center;
     }
     .glass-table table {
         width: 100%;
         border-collapse: collapse;
-        color: black;
+        color: black;  /* Table content black for Partwise Material Receipt Qty */
         font-family: 'Fredoka', sans-serif;
     }
     .glass-table th, .glass-table td {
@@ -58,20 +70,21 @@ st.markdown(
     .glass-table th {
         font-size: 12px;
     }
+
+    /* Glass table for TML Partwise GRN Pending Qty → Red text */
     .glass-table-red table {
         color: red !important;
     }
+
     .fixed-height {
         height: 250px;        
         overflow-y: auto;     
     }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-        padding: 12px;
-        border-radius: 8px;
-        margin: 10px 0;
+
+    /* Sheet ID input styling */
+    .stTextInput > div > div > input {
+        font-size: 16px !important;
+        padding: 10px !important;
     }
     </style>
     """,
@@ -88,77 +101,81 @@ def get_base64(bin_file):
 
 BACKGROUND_IMAGE = "dark.jpg"
 bin_str = get_base64(BACKGROUND_IMAGE)
+# Background image insertion commented
+# st.markdown(f"<style>.stApp {{ background-image: url('data:image/jpg;base64,{bin_str}'); }}</style>", unsafe_allow_html=True)
 
-# 🔥 FIXED GOOGLE SHEETS LOADING - Skip 3 rows for proper headers
-@st.cache_data(ttl=300)
-def load_from_google_sheets():
-    """Load Google Sheet with proper header row (skip first 3 rows)"""
-    url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID}"
-    
-    # Method 1: Skip exactly 3 rows (titles/blank rows) - Row 4 becomes header
+# ===================== Google Sheets Logic =====================
+@st.cache_data
+def load_google_sheet(sheet_id):
+    """Load data from Google Sheet"""
     try:
-        df = pd.read_csv(url, skiprows=3)
-        df.columns = [str(col).strip() for col in df.columns]
-        if len(df) > 0:
-            st.success(f"✅ Loaded {len(df)} rows from Google Sheets!")
-            return df
-    except:
-        pass
-    
-    # Method 2: Try different skiprows
-    for skip in [2, 4, 1]:
-        try:
-            df = pd.read_csv(url, skiprows=skip)
-            df.columns = [str(col).strip() for col in df.columns]
-            if len(df) > 0 and len(df.columns) > 5:
-                st.success(f"✅ Loaded {len(df)} rows (skiprows={skip})!")
-                return df
-        except:
-            continue
-    
-    st.error("❌ Google Sheets loading failed")
-    st.markdown("""
-    <div class="success-box">
-    <strong>FIX:</strong> Open your sheet → SHARE → "Anyone with the link" → Viewer
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
-
-# Load data - Google Sheets first, fallback to upload
-try:
-    df = load_from_google_sheets()
-    data_source = "Google Sheets ✅"
-except:
-    st.warning("⚠️ Using file upload...")
-    data_source = "File Upload"
-    
-    if 'uploaded_file' not in st.session_state:
-        st.session_state.uploaded_file = None
-
-    if st.session_state.uploaded_file is None:
-        uploaded_file = st.file_uploader("Upload TML Excel File", type=["xlsx"])
-        if uploaded_file is not None:
-            st.session_state.uploaded_file = uploaded_file
-            st.rerun()
-    else:
-        uploaded_file = st.session_state.uploaded_file
-
-    if st.session_state.uploaded_file is None:
+        # Use service account credentials from secrets (recommended for production)
+        # For local testing, you can also use default credentials
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        # Try to use st.secrets first (for Streamlit Cloud)
+        if "GCP_SERVICE_ACCOUNT" in st.secrets:
+            creds = Credentials.from_service_account_info(
+                st.secrets["GCP_SERVICE_ACCOUNT"],
+                scopes=scope
+            )
+        else:
+            # Fallback for local development
+            creds = Credentials.from_service_account_file(
+                "service_account.json",  # Place your service account JSON here for local
+                scopes=scope
+            )
+        
+        client = gspread.authorize(creds)
+        sheet = client.open_by_key(sheet_id).worksheet("BTST - AVX AND TML")
+        
+        # Read data starting from row 3 (headers in row 3, data from row 4)
+        data = sheet.get_all_values()[2:]  # Skip first 2 rows (rows 0,1), start from row 3
+        df = pd.DataFrame(data[1:], columns=data[0])  # headers from first row of data (row 3)
+        return df
+    except Exception as e:
+        st.error(f"Error loading Google Sheet: {str(e)}")
+        st.info("""
+        **To fix this:**
+        1. Make sure the SHEET ID is correct above
+        2. Share the Google Sheet with your service account email
+        3. For Streamlit Cloud: Add service account JSON to `.streamlit/secrets.toml`
+        4. For local: Place `service_account.json` in app folder
+        """)
         st.stop()
 
-    df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
-
-st.caption(f"📊 Data Source: {data_source} | Rows: {len(df)} | Columns: {len(df.columns)}")
-
-# ===================== ORIGINAL load_tml FUNCTION =====================
 def norm(s: str) -> str:
-    if pd.isna(s):
-        return ""
     s = str(s).replace(" ", " ")
     s = " ".join(s.split())
     s = s.strip().upper()
     return s
 
+# Load data from Google Sheet
+if 'df' not in st.session_state:
+    st.session_state.df = None
+
+# Allow changing sheet ID easily
+GOOGLE_SHEET_ID = st.text_input(
+    "Google Sheet ID", 
+    value=GOOGLE_SHEET_ID,
+    help="Paste your Google Sheet ID here (from URL)"
+)
+
+if st.button("Load Sheet") or st.session_state.df is None:
+    with st.spinner("Loading Google Sheet..."):
+        st.session_state.df = load_google_sheet(GOOGLE_SHEET_ID)
+        st.success("✅ Google Sheet loaded successfully!")
+
+if st.session_state.df is None:
+    st.info("👆 Enter Google Sheet ID and click 'Load Sheet'")
+    st.stop()
+
+df = st.session_state.df
+
+# ===================== Load TML Function =====================
 def load_tml(df):
     raw_cols = list(df.columns)
     norm_cols = [norm(c) for c in raw_cols]
@@ -166,7 +183,7 @@ def load_tml(df):
 
     def col(key_norm: str) -> str:
         if key_norm not in col_map:
-            raise KeyError(f"Normalized key '{key_norm}' not in {[c[:30] for c in norm_cols]}")
+            raise KeyError(f"Normalized key '{key_norm}' not in {norm_cols}")
         return col_map[key_norm]
 
     KEY_AVX_CHALLAN = "AVX CHALLAN DATE"
@@ -192,12 +209,12 @@ def load_tml(df):
     df["PART_NO"] = df[col(KEY_PART_NO)].apply(lambda x: str(int(x)) if pd.notna(x) and float(x).is_integer() else str(x) if pd.notna(x) else "")
     df["CUSTOMER"] = df[col(KEY_CUSTOMER)].astype(str).fillna("").replace("nan","")
 
-    # Filter empty parts
+    # Drop empty Part No
     df = df[df["PART_NO"].str.strip() != ""]
 
     today = pd.to_datetime(datetime.today().date())
     
-    # Age calculations
+    # BTST TML GRN Status
     df["AGE_DAYS"] = pd.NA
     mask_q = df["TML_CHALLAN_DATE"].notna()
     df.loc[mask_q, "AGE_DAYS"] = (today - df.loc[mask_q, "TML_CHALLAN_DATE"]).dt.days
@@ -211,7 +228,6 @@ def load_tml(df):
 
     return df
 
-# Process data
 tml_full = load_tml(df)
 
 # ===================== Customer Filter =====================
@@ -224,7 +240,6 @@ else:
 
 st.caption(f"Rows in current selection: {len(tml)} (Customer: {selected_customer})")
 
-# Metrics
 btst_invoice_qty = int(tml["AVX_CHALLAN_DATE"].notna().sum())
 btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
@@ -319,7 +334,7 @@ st.markdown(html_template, unsafe_allow_html=True)
 # ===================== SECOND ROW =====================
 r2c1, r2c2 = st.columns([1, 1])
 
-# LEFT: TML Part Wise GRN Pending Qty (Red)
+# ---------- LEFT: TML Part Wise GRN Pending Qty (Red Text) ----------
 with r2c1:
     tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
     diff = (tml_valid["SUPPLIER_QTY"].fillna(0) - tml_valid["GRN_QTY"].fillna(0))
@@ -337,7 +352,7 @@ with r2c1:
     """
     st.markdown(centered_table_html, unsafe_allow_html=True)
 
-# RIGHT: TML GRN Ageing (Colored Buckets)
+# ---------- RIGHT: TML GRN Ageing (Colored Buckets) ----------
 with r2c2:
     age_df = tml_valid.dropna(subset=["CUSTOMER", "PHY_RCPT_DATE"]).copy()
     age_df["AGEING_DAYS"] = pd.NA
@@ -347,16 +362,14 @@ with r2c2:
     age_df.loc[mask_no_challan, "AGEING_DAYS"] = (pd.to_datetime(datetime.today().date()) - age_df.loc[mask_no_challan, "PHY_RCPT_DATE"]).dt.days
 
     def age_bucket(d):
-        if pd.isna(d): return ""
         d = int(d)
         if d <= 7: return "0-7"
         if d <= 15: return "8-15"
         if d <= 25: return "16-25"
         return ">25"
 
-    if not age_df.empty and age_df["AGEING_DAYS"].notna().any():
+    if not age_df.empty:
         age_df["AGE_BUCKET"] = age_df["AGEING_DAYS"].apply(age_bucket)
-        age_df = age_df[age_df["AGE_BUCKET"] != ""]
         age_pivot = age_df.pivot_table(
             index="AGE_BUCKET",
             columns="CUSTOMER",
@@ -378,11 +391,11 @@ with r2c2:
         html_rows = ""
         for _, row in age_pivot.iterrows():
             bucket = row["Bucket"]
-            bgcolor = color_map.get(bucket, {}).get("bg", "#ffffff")
-            txtcolor = color_map.get(bucket, {}).get("color", "#000000")
+            bgcolor = color_map.get(bucket, {}).get("bg", "")
+            txtcolor = color_map.get(bucket, {}).get("color", "#ffffff")
             html_rows += "<tr style='background-color:{}; color:{};'>".format(bgcolor, txtcolor)
             for col_name in age_pivot.columns:
-                html_rows += f"<td>{int(row[col_name])}</td>"
+                html_rows += f"<td>{row[col_name]}</td>"
             html_rows += "</tr>"
 
         table_html = "<table style='margin:auto; border-collapse: collapse; color:black;'>"
@@ -393,7 +406,7 @@ with r2c2:
         table_html += html_rows
         table_html += "</table>"
     else:
-        table_html = "<div style='text-align: center;'>No ageing data available</div>"
+        table_html = "<div style='text-align: center;'>No rows with Q−N days for ageing in this selection.</div>"
 
     centered_table_html = f"""
     <div class="glass-table fixed-height">
@@ -406,53 +419,50 @@ with r2c2:
 # ===================== THIRD ROW: Partwise Material Receipt Qty =====================
 st.write("---")
 
-tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
+# Only keep rows with PHY_RCPT_DATE and non-zero SUPPLIER_QTY
 df_age = tml_valid.dropna(subset=["PHY_RCPT_DATE"]).copy()
 df_age = df_age[df_age["SUPPLIER_QTY"].fillna(0) > 0]
 
-if not df_age.empty:
-    df_age["RCPT_DAY"] = df_age["PHY_RCPT_DATE"].dt.day.astype(int)
+df_age["RCPT_DAY"] = df_age["PHY_RCPT_DATE"].dt.day.astype(int)
 
-    today = pd.to_datetime(datetime.today().date())
-    month_end = today.replace(day=pd.Period(today, freq='M').days_in_month)
-    days = list(range(1, month_end.day + 1))
+today = pd.to_datetime(datetime.today().date())
+month_end = today.replace(day=pd.Period(today, freq='M').days_in_month)
+days = list(range(1, month_end.day + 1))
 
-    mat_pivot = df_age.pivot_table(
-        index="PART_NO",
-        columns="RCPT_DAY",
-        values="SUPPLIER_QTY",
-        aggfunc="sum",
-        fill_value=0
-    ).reindex(columns=days, fill_value=0)
+# Pivot table: index=PART_NO, columns=RCPT_DAY, values=SUPPLIER_QTY
+mat_pivot = df_age.pivot_table(
+    index="PART_NO",
+    columns="RCPT_DAY",
+    values="SUPPLIER_QTY",
+    aggfunc="sum",
+    fill_value=0
+).reindex(columns=days, fill_value=0)
 
-    mat_pivot = mat_pivot.reindex(tml_valid["PART_NO"].unique(), fill_value=0)
-    mat_pivot.columns = [str(d) for d in mat_pivot.columns]
+# Keep order same as original PART_NO in uploaded data
+mat_pivot = mat_pivot.reindex(tml_valid["PART_NO"].unique(), fill_value=0)
+mat_pivot.columns = [str(d) for d in mat_pivot.columns]
 
-    def format_qty(x):
-        if x == 0 or pd.isna(x):
-            return ""
-        return str(int(x))
+# Convert floats to int and suppress zeros
+def format_qty(x):
+    if x == 0 or pd.isna(x):
+        return ""
+    return str(int(x))
 
-    mat_pivot = mat_pivot.applymap(format_qty)
-    mat_pivot = mat_pivot.reset_index()
+mat_pivot = mat_pivot.applymap(format_qty)
+mat_pivot = mat_pivot.reset_index()
 
-    table_html = mat_pivot.to_html(escape=False, index=False)
-    table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART_NO</th>')
+# Generate HTML table
+table_html = mat_pivot.to_html(escape=False, index=False)
+table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART_NO</th>')
 
-    centered_table_html = f"""
-    <div class="glass-table">
-        <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
-        <div style='text-align: center;'>{table_html}</div>
-    </div>
-    """
-    st.markdown(centered_table_html, unsafe_allow_html=True)
-else:
-    st.markdown("""
-    <div class="glass-table">
-        <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
-        <div style='text-align: center; padding: 40px; color: #666;'>No material receipt data available</div>
-    </div>
-    """, unsafe_allow_html=True)
+centered_table_html = f"""
+<div class="glass-table">
+    <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
+    <div style='text-align: center;'>{table_html}</div>
+</div>
+"""
+st.markdown(centered_table_html, unsafe_allow_html=True)
+
 
 
 
