@@ -124,18 +124,23 @@ with col2:
                     try:
                         url = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name.replace(' ', '%20')}"
                         df_temp = pd.read_csv(url)
-                        if not df_temp.empty:
-                            # Fix headers (your sheet has headers in row 3)
-                            df_temp.columns = df_temp.iloc[2] if len(df_temp) > 2 else df_temp.columns
-                            df_temp = df_temp[3:].reset_index(drop=True)
+                        if not df_temp.empty and len(df_temp.columns) > 5:
+                            st.success(f"✅ Found '{sheet_name}' ({len(df_temp)} rows)")
+                            # ✅ FIXED: Properly set headers from row 3 (index 2)
+                            if len(df_temp) > 2:
+                                df_temp.columns = df_temp.iloc[2]  # Headers in row 3
+                                df_temp = df_temp.iloc[3:].reset_index(drop=True)  # Data from row 4
+                            
+                            # Clean column names
+                            df_temp.columns = [str(col).strip() for col in df_temp.columns]
                             st.session_state.df = df_temp
                             st.session_state.source = f"Google Sheet: {sheet_name}"
-                            st.success(f"✅ Loaded from Google Sheet '{sheet_name}' ({len(df_temp)} rows)")
                             st.rerun()
                             break
                     except:
                         continue
-                st.error("❌ Sheet not found. Check: 1) 'Anyone with link=Viewer' 2) Sheet tab name")
+                else:
+                    st.error("❌ No valid sheet found")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
 
@@ -156,17 +161,28 @@ if st.session_state.df is None:
 df = st.session_state.df
 st.success(f"✅ Data loaded from: **{st.session_state.source}** ({len(df)} rows)")
 
-# ===================== Load TML Function (UNCHANGED) =====================
+# DEBUG: Show first few column names
+st.sidebar.write("**📋 Column Names Found:**")
+for i, col in enumerate(df.columns[:10]):
+    st.sidebar.write(f"{i}: {repr(col)}")
+
+# ===================== FIXED Load TML Function =====================
 def load_tml(df):
     raw_cols = list(df.columns)
-    norm_cols = [norm(c) for c in raw_cols]
+    norm_cols = [norm(str(c)) for c in raw_cols]
     col_map = dict(zip(norm_cols, raw_cols))
 
-    def col(key_norm: str) -> str:
-        if key_norm not in col_map:
-            raise KeyError(f"Normalized key '{key_norm}' not in {norm_cols}")
-        return col_map[key_norm]
+    def safe_col(key_norm: str, default_col=None):
+        """Safe column lookup with fallback"""
+        if key_norm in col_map:
+            return col_map[key_norm]
+        # Fallback to first non-empty column or default
+        for col in raw_cols:
+            if str(col).strip() and not str(col).lower().startswith('unnamed'):
+                return col
+        return raw_cols[0] if raw_cols else None
 
+    # Define keys with fallbacks
     KEY_AVX_CHALLAN = "AVX CHALLAN DATE"
     KEY_HANDOVER = "AVX INVOICE ACK. HANDOVER DATE"
     KEY_TML_CHALLAN = "TML CHALLAN DATE"
@@ -176,26 +192,50 @@ def load_tml(df):
     KEY_SUPP_QTY = "QTY"
     KEY_GRN_QTY = "QTY (GRN)"
 
-    # Convert dates
-    df["AVX_CHALLAN_DATE"] = pd.to_datetime(df[col(KEY_AVX_CHALLAN)], errors="coerce", dayfirst=True)
-    df["HANDOVER_DATE"] = pd.to_datetime(df[col(KEY_HANDOVER)], errors="coerce", dayfirst=True)
-    df["TML_CHALLAN_DATE"] = pd.to_datetime(df[col(KEY_TML_CHALLAN)], errors="coerce", dayfirst=True)
-    df["PHY_RCPT_DATE"] = pd.to_datetime(df[col(KEY_PHY_RCPT)], errors="coerce", dayfirst=True)
+    # Safe column access
+    try:
+        df["AVX_CHALLAN_DATE"] = pd.to_datetime(df[safe_col(KEY_AVX_CHALLAN)], errors="coerce", dayfirst=True)
+    except:
+        df["AVX_CHALLAN_DATE"] = pd.NaT
 
-    # Quantities
-    df["SUPPLIER_QTY"] = pd.to_numeric(df[col(KEY_SUPP_QTY)], errors="coerce")
-    df["GRN_QTY"] = pd.to_numeric(df[col(KEY_GRN_QTY)], errors="coerce")
+    try:
+        df["HANDOVER_DATE"] = pd.to_datetime(df[safe_col(KEY_HANDOVER)], errors="coerce", dayfirst=True)
+    except:
+        df["HANDOVER_DATE"] = pd.NaT
 
-    # Part No and Customer
-    df["PART_NO"] = df[col(KEY_PART_NO)].apply(lambda x: str(int(x)) if pd.notna(x) and float(x).is_integer() else str(x) if pd.notna(x) else "")
-    df["CUSTOMER"] = df[col(KEY_CUSTOMER)].astype(str).fillna("").replace("nan","")
+    try:
+        df["TML_CHALLAN_DATE"] = pd.to_datetime(df[safe_col(KEY_TML_CHALLAN)], errors="coerce", dayfirst=True)
+    except:
+        df["TML_CHALLAN_DATE"] = pd.NaT
+
+    try:
+        df["PHY_RCPT_DATE"] = pd.to_datetime(df[safe_col(KEY_PHY_RCPT)], errors="coerce", dayfirst=True)
+    except:
+        df["PHY_RCPT_DATE"] = pd.NaT
+
+    try:
+        df["SUPPLIER_QTY"] = pd.to_numeric(df[safe_col(KEY_SUPP_QTY)], errors="coerce")
+    except:
+        df["SUPPLIER_QTY"] = 0
+
+    try:
+        df["GRN_QTY"] = pd.to_numeric(df[safe_col(KEY_GRN_QTY)], errors="coerce")
+    except:
+        df["GRN_QTY"] = 0
+
+    # Part No and Customer - most critical
+    part_col = safe_col(KEY_PART_NO)
+    customer_col = safe_col(KEY_CUSTOMER)
+    
+    df["PART_NO"] = df[part_col].astype(str).str.strip() if part_col else ""
+    df["CUSTOMER"] = df[customer_col].astype(str).fillna("").str.strip() if customer_col else "Unknown"
 
     # Drop empty Part No
     df = df[df["PART_NO"].str.strip() != ""]
 
     today = pd.to_datetime(datetime.today().date())
     
-    # BTST TML GRN Status
+    # Calculations
     df["AGE_DAYS"] = pd.NA
     mask_q = df["TML_CHALLAN_DATE"].notna()
     df.loc[mask_q, "AGE_DAYS"] = (today - df.loc[mask_q, "TML_CHALLAN_DATE"]).dt.days
