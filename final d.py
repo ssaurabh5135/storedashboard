@@ -1,8 +1,3 @@
-
-
-
-#########################################
-
 import streamlit as st  
 import pandas as pd
 from datetime import datetime
@@ -418,6 +413,7 @@ st.markdown(f"""
 
 st.markdown("---")
 st.caption("✅ **PERFECT!** Google Sheet + Excel = SAME DATA. All CSS preserved.")
+
 
 
 #################################################################
