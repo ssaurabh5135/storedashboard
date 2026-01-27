@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st  
 import pandas as pd
 from datetime import datetime
 import base64
@@ -34,25 +34,23 @@ st.markdown(
     }
     .glass-table h3 {
         color: black;
+        font-family: 'Fredoka', sans-serif;
         text-align: center;
     }
     .glass-table table {
         width: 100%;
         border-collapse: collapse;
         color: black;
+        font-family: 'Fredoka', sans-serif;
     }
     .glass-table th, .glass-table td {
         border: 1px solid rgba(0,0,0,0.3);
         padding: 10px;
         text-align: center;
     }
-    .glass-table-red table {
-        color: red !important;
-    }
-    .fixed-height {
-        height: 250px;
-        overflow-y: auto;
-    }
+    .glass-table th { font-size: 12px; }
+    .glass-table-red table { color: red !important; }
+    .fixed-height { height: 250px; overflow-y: auto; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -60,14 +58,12 @@ st.markdown(
 
 # ===================== NORMALIZE FUNCTION =====================
 def norm(s: str) -> str:
-    s = str(s)
+    s = str(s).replace(" ", " ")
     s = " ".join(s.split())
     return s.strip().upper()
 
-# ===================== LOAD EXCEL FROM GOOGLE DRIVE =====================
-# 🔴 REPLACE FILE_ID LATER
+# ===================== GOOGLE DRIVE SOURCE =====================
 FILE_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
-
 excel_url = f"https://drive.google.com/uc?id={FILE_ID}&export=download"
 
 df = pd.read_excel(
@@ -76,45 +72,68 @@ df = pd.read_excel(
     header=2
 )
 
-# ===================== LOAD TML FUNCTION =====================
+# ===================== Load TML Function =====================
 def load_tml(df):
     raw_cols = list(df.columns)
     norm_cols = [norm(c) for c in raw_cols]
     col_map = dict(zip(norm_cols, raw_cols))
 
-    def col(key):
-        return col_map[key]
+    def col(key_norm: str) -> str:
+        return col_map[key_norm]
 
-    df["AVX_CHALLAN_DATE"] = pd.to_datetime(df[col("AVX CHALLAN DATE")], errors="coerce", dayfirst=True)
-    df["HANDOVER_DATE"] = pd.to_datetime(df[col("AVX INVOICE ACK. HANDOVER DATE")], errors="coerce", dayfirst=True)
-    df["TML_CHALLAN_DATE"] = pd.to_datetime(df[col("TML CHALLAN DATE")], errors="coerce", dayfirst=True)
-    df["PHY_RCPT_DATE"] = pd.to_datetime(df[col("AVX PHY MATERIAL RECIPT DATE")], errors="coerce", dayfirst=True)
+    KEY_AVX_CHALLAN = "AVX CHALLAN DATE"
+    KEY_HANDOVER = "AVX INVOICE ACK. HANDOVER DATE"
+    KEY_TML_CHALLAN = "TML CHALLAN DATE"
+    KEY_PHY_RCPT = "AVX PHY MATERIAL RECIPT DATE"
+    KEY_PART_NO = "PART NO."
+    KEY_CUSTOMER = "SUPPLIER NAME"
+    KEY_SUPP_QTY = "QTY"
+    KEY_GRN_QTY = "QTY (GRN)"
 
-    df["SUPPLIER_QTY"] = pd.to_numeric(df[col("QTY")], errors="coerce")
-    df["GRN_QTY"] = pd.to_numeric(df[col("QTY (GRN)")], errors="coerce")
+    df["AVX_CHALLAN_DATE"] = pd.to_datetime(df[col(KEY_AVX_CHALLAN)], errors="coerce", dayfirst=True)
+    df["HANDOVER_DATE"] = pd.to_datetime(df[col(KEY_HANDOVER)], errors="coerce", dayfirst=True)
+    df["TML_CHALLAN_DATE"] = pd.to_datetime(df[col(KEY_TML_CHALLAN)], errors="coerce", dayfirst=True)
+    df["PHY_RCPT_DATE"] = pd.to_datetime(df[col(KEY_PHY_RCPT)], errors="coerce", dayfirst=True)
 
-    df["PART_NO"] = df[col("PART NO.")].astype(str)
-    df["CUSTOMER"] = df[col("SUPPLIER NAME")].astype(str).replace("nan", "")
+    df["SUPPLIER_QTY"] = pd.to_numeric(df[col(KEY_SUPP_QTY)], errors="coerce")
+    df["GRN_QTY"] = pd.to_numeric(df[col(KEY_GRN_QTY)], errors="coerce")
+
+    df["PART_NO"] = df[col(KEY_PART_NO)].apply(
+        lambda x: str(int(x)) if pd.notna(x) and float(x).is_integer()
+        else str(x) if pd.notna(x) else ""
+    )
+    df["CUSTOMER"] = df[col(KEY_CUSTOMER)].astype(str).fillna("").replace("nan","")
 
     df = df[df["PART_NO"].str.strip() != ""]
 
     today = pd.to_datetime(datetime.today().date())
 
-    df["AGE_DAYS"] = (today - df["TML_CHALLAN_DATE"]).dt.days
-    df["Q_MINUS_N_DAYS"] = (df["TML_CHALLAN_DATE"] - df["PHY_RCPT_DATE"]).dt.days
+    df["AGE_DAYS"] = pd.NA
+    mask_q = df["TML_CHALLAN_DATE"].notna()
+    df.loc[mask_q, "AGE_DAYS"] = (today - df.loc[mask_q, "TML_CHALLAN_DATE"]).dt.days
+
+    df["Q_MINUS_N_DAYS"] = pd.NA
+    mask_qn = df["TML_CHALLAN_DATE"].notna() & df["PHY_RCPT_DATE"].notna()
+    df.loc[mask_qn, "Q_MINUS_N_DAYS"] = (
+        df.loc[mask_qn, "TML_CHALLAN_DATE"] - df.loc[mask_qn, "PHY_RCPT_DATE"]
+    ).dt.days
+
+    mask_no_challan = df["TML_CHALLAN_DATE"].isna() & df["PHY_RCPT_DATE"].notna()
+    df.loc[mask_no_challan, "Q_MINUS_N_DAYS"] = (
+        today - df.loc[mask_no_challan, "PHY_RCPT_DATE"]
+    ).dt.days
 
     return df
 
 tml_full = load_tml(df)
 
-# ===================== CUSTOMER FILTER =====================
+# ===================== Customer Filter =====================
 customers = sorted(tml_full["CUSTOMER"].dropna().unique().tolist())
 selected_customer = st.selectbox("Customer", ["All"] + customers)
 tml = tml_full if selected_customer == "All" else tml_full[tml_full["CUSTOMER"] == selected_customer]
 
 st.caption(f"Rows in current selection: {len(tml)} (Customer: {selected_customer})")
 
-# ===================== KPI VALUES =====================
 btst_invoice_qty = int(tml["AVX_CHALLAN_DATE"].notna().sum())
 btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
@@ -134,13 +153,10 @@ st.markdown(html_template, unsafe_allow_html=True)
 # ===================== SECOND ROW =====================
 r2c1, r2c2 = st.columns([1, 1])
 
-# ---------- LEFT ----------
 with r2c1:
     tml_valid = tml.copy()
     tml_valid["PENDING_QTY"] = (tml_valid["SUPPLIER_QTY"].fillna(0) - tml_valid["GRN_QTY"].fillna(0)).clip(lower=0)
     part_pending = tml_valid.groupby("PART_NO")["PENDING_QTY"].sum().reset_index()
-    part_pending.columns = ["Part No", "GRN Pending Qty"]
-
     st.markdown(
         f"""
         <div class="glass-table glass-table-red fixed-height">
@@ -151,26 +167,14 @@ with r2c1:
         unsafe_allow_html=True
     )
 
-# ---------- RIGHT ----------
 with r2c2:
     age_df = tml_valid.dropna(subset=["PHY_RCPT_DATE"]).copy()
     age_df["AGEING_DAYS"] = (pd.to_datetime(datetime.today().date()) - age_df["PHY_RCPT_DATE"]).dt.days
-
-    def age_bucket(d):
-        d = int(d)
-        if d <= 7: return "0-7"
-        if d <= 15: return "8-15"
-        if d <= 25: return "16-25"
-        return ">25"
-
-    age_df["AGE_BUCKET"] = age_df["AGEING_DAYS"].apply(age_bucket)
-    age_pivot = age_df.pivot_table(index="AGE_BUCKET", values="AGEING_DAYS", aggfunc="count").reset_index()
-
     st.markdown(
         f"""
         <div class="glass-table fixed-height">
             <h3>TML GRN Ageing Day</h3>
-            {age_pivot.to_html(index=False)}
+            {age_df.to_html(index=False)}
         </div>
         """,
         unsafe_allow_html=True
@@ -184,7 +188,7 @@ df_age = df_age[df_age["SUPPLIER_QTY"].fillna(0) > 0]
 df_age["RCPT_DAY"] = df_age["PHY_RCPT_DATE"].dt.day.astype(int)
 
 today = pd.to_datetime(datetime.today().date())
-month_end = today.replace(day=pd.Period(today, freq="M").days_in_month)
+month_end = today.replace(day=pd.Period(today, freq='M').days_in_month)
 days = list(range(1, month_end.day + 1))
 
 mat_pivot = df_age.pivot_table(
@@ -211,7 +215,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 
 ####################################################################
 
