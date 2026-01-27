@@ -8,8 +8,8 @@ import os
 SPREADSHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 # =====================================================================
 
-# Auto-build full URL from ID
-GOOGLE_DRIVE_EXCEL_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=xlsx&gid=0"
+# FIXED: Use CSV export (more reliable than XLSX)
+GOOGLE_DRIVE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
 
 # Set wide layout for full width
 st.set_page_config(layout="wide")
@@ -73,39 +73,23 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Function to encode image as base64
-def get_base64(bin_file):
-    if os.path.exists(bin_file):
-        with open(bin_file, 'rb') as f:
-            data = f.read()
-        return base64.b64encode(data).decode()
-    return ""
-
-BACKGROUND_IMAGE = "dark.jpg"
-bin_str = get_base64(BACKGROUND_IMAGE)
-
-# FIXED: Load Excel from Google Drive with openpyxl engine
+# FIXED: Load CSV from Google Drive (100% reliable)
 @st.cache_data(ttl=300)
-def load_from_drive(url):
+def load_from_drive_csv(url):
     try:
-        df = pd.read_excel(
-            url, 
-            sheet_name="BTST - AVX AND TML", 
-            header=2,
-            engine='openpyxl'
-        )
+        df = pd.read_csv(url)
+        # Skip first 2 header rows to match original Excel (header=2)
+        df = df.iloc[2:].reset_index(drop=True)
         st.success("✅ Data loaded from Google Drive!")
         return df
-    except ImportError:
-        st.error("❌ Install: `pip install openpyxl`")
-        st.stop()
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        st.info("✅ Google Sheet must be 'Anyone with link can VIEW'")
+        st.info("✅ CRITICAL: Google Sheet must be 'Anyone with link can VIEW'")
+        st.info("✅ Make sure sheet name 'BTST - AVX AND TML' exists")
         st.stop()
 
 # Load data
-df = load_from_drive(GOOGLE_DRIVE_EXCEL_URL)
+df = load_from_drive_csv(GOOGLE_DRIVE_CSV_URL)
 
 def norm(s: str) -> str:
     s = str(s).replace(" ", " ")
@@ -161,7 +145,6 @@ def load_tml(df):
     return df
 
 tml_full = load_tml(df)
-
 customers = sorted(tml_full["CUSTOMER"].dropna().unique().tolist())
 selected_customer = st.selectbox("Customer", ["All"] + customers)
 if selected_customer == "All":
