@@ -7,21 +7,35 @@ import os
 # Set wide layout for full width
 st.set_page_config(layout="wide")
 
-# ===================== CUSTOM CSS =====================
+# Custom CSS for full page coverage and table styling
 st.markdown(
     """
     <style>
+    /* Remove default Streamlit padding */
     .stApp {
         max-width: 100%;
         padding: 0;
-        background-color: white;
+        background-color: white;  /* fallback background */
     }
+    /* Main container */
     .st-emotion-cache-1jicfl2 {
         width: 100%;
         padding: 0;
         margin: 0;
         max-width: initial;
     }
+
+    /* ================= BACKGROUND IMAGE (COMMENTED) =================
+    .stApp {
+        background-image: url("data:image/jpg;base64,INSERT_BASE64_HERE");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    ============================================================================== */
+
+    /* Glass table styling */
     .glass-table {
         background: rgba(255,255,255,0.1);
         backdrop-filter: blur(10px);
@@ -48,24 +62,45 @@ st.markdown(
         padding: 10px;
         text-align: center;
     }
-    .glass-table th { font-size: 12px; }
-    .glass-table-red table { color: red !important; }
-    .fixed-height { height: 250px; overflow-y: auto; }
+    .glass-table th {
+        font-size: 12px;
+    }
+    .glass-table-red table {
+        color: red !important;
+    }
+    .fixed-height {
+        height: 250px;        
+        overflow-y: auto;     
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
+# Function to encode image as base64
+def get_base64(bin_file):
+    if os.path.exists(bin_file):
+        with open(bin_file, 'rb') as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    return ""
+
+BACKGROUND_IMAGE = "dark.jpg"
+bin_str = get_base64(BACKGROUND_IMAGE)
+# st.markdown(f"<style>.stApp {{ background-image: url('data:image/jpg;base64,{bin_str}'); }}</style>", unsafe_allow_html=True)
+
 # ===================== NORMALIZE FUNCTION =====================
 def norm(s: str) -> str:
     s = str(s).replace(" ", " ")
     s = " ".join(s.split())
-    return s.strip().upper()
+    s = s.strip().upper()
+    return s
 
-# ===================== GOOGLE DRIVE SOURCE =====================
+# ===================== GOOGLE DRIVE SOURCE (ONLY CHANGE) =====================
 FILE_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 excel_url = f"https://drive.google.com/uc?id={FILE_ID}&export=download"
 
+# Read Excel file
 df = pd.read_excel(
     excel_url,
     sheet_name="BTST - AVX AND TML",
@@ -79,6 +114,8 @@ def load_tml(df):
     col_map = dict(zip(norm_cols, raw_cols))
 
     def col(key_norm: str) -> str:
+        if key_norm not in col_map:
+            raise KeyError(f"Normalized key '{key_norm}' not in {norm_cols}")
         return col_map[key_norm]
 
     KEY_AVX_CHALLAN = "AVX CHALLAN DATE"
@@ -126,11 +163,14 @@ def load_tml(df):
     return df
 
 tml_full = load_tml(df)
-
 # ===================== Customer Filter =====================
 customers = sorted(tml_full["CUSTOMER"].dropna().unique().tolist())
 selected_customer = st.selectbox("Customer", ["All"] + customers)
-tml = tml_full if selected_customer == "All" else tml_full[tml_full["CUSTOMER"] == selected_customer]
+
+if selected_customer == "All":
+    tml = tml_full.copy()
+else:
+    tml = tml_full[tml_full["CUSTOMER"] == selected_customer].copy()
 
 st.caption(f"Rows in current selection: {len(tml)} (Customer: {selected_customer})")
 
@@ -139,14 +179,20 @@ btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
 avg_days = 0 if tml["Q_MINUS_N_DAYS"].dropna().empty else round(tml["Q_MINUS_N_DAYS"].dropna().mean())
 
-# ===================== KPI CARDS =====================
+# ===================== FIRST ROW: HTML CARDS =====================
 html_template = f"""
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding:20px">
-    <div class="glass-table"><h3>{btst_invoice_qty}</h3>BTST Invoice Qty Rec'd from AVX</div>
-    <div class="glass-table"><h3>{btst_handover_status}</h3>BTST Invoice Handover Status</div>
-    <div class="glass-table"><h3>{btst_tml_grn_status}</h3>BTST TML GRN Status</div>
-    <div class="glass-table"><h3>{avg_days}</h3>TML GRN Average Days</div>
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="container">
+<div class="card"><div class="value-blue">{btst_invoice_qty}</div><div class="title-black">BTST Invoice Qty Rec'd from AVX</div></div>
+<div class="card"><div class="value-blue">{btst_handover_status}</div><div class="title-black">BTST Invoice Handover Status</div></div>
+<div class="card"><div class="value-blue">{btst_tml_grn_status}</div><div class="title-black">BTST TML GRN Status</div></div>
+<div class="card"><div class="value-blue">{avg_days}</div><div class="title-black">TML GRN Average Days</div></div>
 </div>
+</body></html>
 """
 st.markdown(html_template, unsafe_allow_html=True)
 
@@ -155,8 +201,13 @@ r2c1, r2c2 = st.columns([1, 1])
 
 with r2c1:
     tml_valid = tml.copy()
-    tml_valid["PENDING_QTY"] = (tml_valid["SUPPLIER_QTY"].fillna(0) - tml_valid["GRN_QTY"].fillna(0)).clip(lower=0)
+    diff = (tml_valid["SUPPLIER_QTY"].fillna(0) - tml_valid["GRN_QTY"].fillna(0))
+    diff = diff.apply(lambda x: x if x > 0 else 0)
+    tml_valid["PENDING_QTY"] = diff.astype(int)
+
     part_pending = tml_valid.groupby("PART_NO")["PENDING_QTY"].sum().reset_index()
+    part_pending.columns = ["Part No", "GRN Pending Qty"]
+
     st.markdown(
         f"""
         <div class="glass-table glass-table-red fixed-height">
@@ -170,6 +221,7 @@ with r2c1:
 with r2c2:
     age_df = tml_valid.dropna(subset=["PHY_RCPT_DATE"]).copy()
     age_df["AGEING_DAYS"] = (pd.to_datetime(datetime.today().date()) - age_df["PHY_RCPT_DATE"]).dt.days
+
     st.markdown(
         f"""
         <div class="glass-table fixed-height">
@@ -199,22 +251,30 @@ mat_pivot = df_age.pivot_table(
     fill_value=0
 ).reindex(columns=days, fill_value=0)
 
-mat_pivot = mat_pivot.reset_index()
+mat_pivot = mat_pivot.reindex(tml_valid["PART_NO"].unique(), fill_value=0)
+mat_pivot.columns = [str(d) for d in mat_pivot.columns]
 
 def format_qty(x):
-    return "" if x == 0 else str(int(x))
+    if x == 0 or pd.isna(x):
+        return ""
+    return str(int(x))
 
 mat_pivot = mat_pivot.applymap(format_qty)
+mat_pivot = mat_pivot.reset_index()
+
+table_html = mat_pivot.to_html(escape=False, index=False)
+table_html = table_html.replace('<th>PART_NO</th>', '<th style="font-size: 12px;">PART_NO</th>')
 
 st.markdown(
     f"""
     <div class="glass-table">
         <h3>Partwise Material Receipt Qty (Only Non-Zero)</h3>
-        {mat_pivot.to_html(index=False)}
+        <div style='text-align: center;'>{table_html}</div>
     </div>
     """,
     unsafe_allow_html=True
 )
+
 
 ####################################################################
 
