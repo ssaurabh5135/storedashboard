@@ -92,9 +92,6 @@ if 'df' not in st.session_state:
 if 'source' not in st.session_state:
     st.session_state.source = None
 
-
-st.info(f"🔗 Google Sheet ID: `{GOOGLE_SHEET_ID}`")
-
 # Google Sheet Loading
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
