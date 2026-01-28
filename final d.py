@@ -92,7 +92,7 @@ if 'df' not in st.session_state:
 if 'source' not in st.session_state:
     st.session_state.source = None
 
-st.title("📊 TML BTST Dashboard")
+
 st.info(f"🔗 Google Sheet ID: `{GOOGLE_SHEET_ID}`")
 
 # Google Sheet Loading
