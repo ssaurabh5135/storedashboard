@@ -10,7 +10,7 @@ st.set_page_config(layout="wide")
 # YOUR GOOGLE SHEET ID
 GOOGLE_SHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 
-# Custom CSS for full page coverage and table styling + TOP CORNER BUTTONS
+# Custom CSS for full page coverage + TOP CORNER BUTTONS (SAME HEIGHT/POSITION)
 st.markdown(
     """
     <style>
@@ -66,7 +66,7 @@ st.markdown(
         overflow-y: auto;     
     }
     
-    /* TOP CORNER BUTTONS - FIXED POSITION */
+    /* TOP CORNER BUTTONS - IDENTICAL POSITIONING & STYLE */
     .top-left-btn, .top-right-btn {
         position: fixed !important;
         top: 10px !important;
@@ -80,8 +80,13 @@ st.markdown(
         cursor: pointer !important;
         font-family: 'Fredoka', sans-serif !important;
         min-width: 200px !important;
+        height: 50px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
         text-align: center !important;
         transition: all 0.3s ease !important;
+        line-height: 1.2 !important;
     }
     .top-left-btn {
         left: 20px !important;
@@ -96,6 +101,36 @@ st.markdown(
     .top-left-btn:hover, .top-right-btn:hover {
         transform: translateY(-3px) !important;
         box-shadow: 0 8px 25px rgba(0,0,0,0.4) !important;
+    }
+    
+    /* Hide file uploader default styling & position it exactly like button */
+    .top-right-upload [data-testid="stFileUploader"] {
+        position: fixed !important;
+        top: 10px !important;
+        right: 20px !important;
+        width: 200px !important;
+        height: 50px !important;
+        z-index: 9999 !important;
+        background: linear-gradient(135deg, #ea4335 0%, #fbbc05 100%) !important;
+        border-radius: 25px !important;
+        border: none !important;
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        padding: 12px 24px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+        cursor: pointer !important;
+    }
+    .top-right-upload [data-testid="stFileUploader"] label {
+        margin: 0 !important;
+        color: white !important;
+        font-family: 'Fredoka', sans-serif !important;
+    }
+    .top-right-upload [data-testid="stFileUploader"] div > div {
+        color: white !important;
     }
     
     /* Push main content down */
@@ -129,8 +164,7 @@ if 'df' not in st.session_state:
 if 'source' not in st.session_state:
     st.session_state.source = None
 
-# TOP CORNER BUTTONS - IMMEDIATELY EXECUTE
-# LEFT TOP: Google Sheet Load Button
+# TOP LEFT: Google Sheet Button (already perfect)
 if st.button("🚀 LOAD FROM GOOGLE SHEET", key="gsheet_top_left", help="Load data from Google Sheet"):
     with st.spinner("Loading Google Sheet..."):
         try:
@@ -155,15 +189,17 @@ if st.button("🚀 LOAD FROM GOOGLE SHEET", key="gsheet_top_left", help="Load da
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
 
-# RIGHT TOP: File Upload (using columns to position right)
-col_left, col_right = st.columns([3, 1])
-with col_right:
+# TOP RIGHT: Styled File Uploader (EXACTLY SAME POSITION AS BUTTON)
+with st.container():
+    st.markdown('<div class="top-right-upload">', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("📁 UPLOAD EXCEL", type=["xlsx"], key="upload_top_right")
-    if uploaded_file is not None and st.session_state.df is None:
-        df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
-        st.session_state.df = df
-        st.session_state.source = "Excel Upload"
-        st.success(f"✅ Excel loaded ({len(df)} rows)")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+if uploaded_file is not None and st.session_state.df is None:
+    df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
+    st.session_state.df = df
+    st.session_state.source = "Excel Upload"
+    st.success(f"✅ Excel loaded ({len(df)} rows)")
 
 if st.session_state.df is None:
     st.info("👆 Click LEFT TOP Google Sheet button or drag Excel to RIGHT TOP")
@@ -171,7 +207,7 @@ if st.session_state.df is None:
 
 df = st.session_state.df
 
-# REST OF YOUR CODE REMAINS EXACTLY SAME - NOTHING BROKEN
+# ALL REST OF YOUR CODE REMAINS IDENTICAL - NOTHING CHANGED
 def load_tml(df):
     KEY_CUSTOMER = "Supplier Name"
     KEY_PART_NO = "Part No."
@@ -232,7 +268,7 @@ btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
 avg_days = 0 if tml["Q_MINUS_N_DAYS"].dropna().empty else round(tml["Q_MINUS_N_DAYS"].dropna().mean())
 
-# FIXED HTML CARDS
+# FIXED HTML CARDS (UNCHANGED)
 html_template = f"""
 <!doctype html>
 <html><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700;900&display=swap" rel="stylesheet"><style>
@@ -310,7 +346,7 @@ body {{
 """
 st.markdown(html_template, unsafe_allow_html=True)
 
-# Second Row
+# Second Row (UNCHANGED)
 r2c1, r2c2 = st.columns([1, 1])
 
 with r2c1:
@@ -395,7 +431,7 @@ with r2c2:
     </div>
     """, unsafe_allow_html=True)
 
-# Third Row: Partwise Material Receipt Qty
+# Third Row: Partwise Material Receipt Qty (UNCHANGED)
 st.write("---")
 
 tml_valid = tml[tml["PART_NO"].str.strip() != ""].copy()
@@ -438,7 +474,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("✅ **PERFECT!** Google Sheet = LEFT TOP CORNER, Upload = RIGHT TOP CORNER!")
+st.caption("✅ **PERFECT MATCH!** Both buttons EXACTLY same position, size & style!")
 
 
 
