@@ -133,7 +133,7 @@ if st.session_state.df is None:
     st.stop()
 
 df = st.session_state.df
-st.success(f"✅ Loaded: **{st.session_state.source}** ({len(df)} rows)")
+# st.success(f"✅ Loaded: **{st.session_state.source}** ({len(df)} rows)")
 
 def load_tml(df):
     KEY_CUSTOMER = "Supplier Name"
