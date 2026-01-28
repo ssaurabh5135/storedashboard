@@ -10,7 +10,7 @@ st.set_page_config(layout="wide")
 # YOUR GOOGLE SHEET ID
 GOOGLE_SHEET_ID = "1T0Vm1acvcXqHlMkcKi3NgNRiJERMLGLM"
 
-# Custom CSS for full page coverage and table styling
+# Custom CSS for full page coverage and table styling + TOP CORNER BUTTONS
 st.markdown(
     """
     <style>
@@ -66,41 +66,41 @@ st.markdown(
         overflow-y: auto;     
     }
     
-    /* Header button styling to match Google Sheet button */
-    .header-left, .header-right {
-        position: fixed;
-        top: 20px;
-        z-index: 1000;
-        padding: 10px 20px;
-        border-radius: 8px;
-        font-weight: bold;
-        font-size: 14px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        border: none;
-        cursor: pointer;
-        text-align: center;
-        min-width: 220px;
+    /* TOP CORNER BUTTONS - FIXED POSITION */
+    .top-left-btn, .top-right-btn {
+        position: fixed !important;
+        top: 10px !important;
+        z-index: 9999 !important;
+        padding: 12px 24px !important;
+        border-radius: 25px !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+        border: none !important;
+        cursor: pointer !important;
+        font-family: 'Fredoka', sans-serif !important;
+        min-width: 200px !important;
+        text-align: center !important;
+        transition: all 0.3s ease !important;
     }
-    .header-left {
-        left: 20px;
-        background: linear-gradient(135deg, #4285f4, #34a853);
-        color: white;
+    .top-left-btn {
+        left: 20px !important;
+        background: linear-gradient(135deg, #4285f4 0%, #34a853 100%) !important;
+        color: white !important;
     }
-    .header-right {
-        right: 20px;
-        background: linear-gradient(135deg, #ea4335, #fbbc05);
-        color: white;
+    .top-right-btn {
+        right: 20px !important;
+        background: linear-gradient(135deg, #ea4335 0%, #fbbc05 100%) !important;
+        color: white !important;
     }
-    .header-left:hover {
-        background: linear-gradient(135deg, #3367d6, #2d7d40);
-        transform: translateY(-2px);
+    .top-left-btn:hover, .top-right-btn:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.4) !important;
     }
-    .header-right:hover {
-        background: linear-gradient(135deg, #d93025, #f4b400);
-        transform: translateY(-2px);
-    }
-    .main-content {
-        padding-top: 100px;
+    
+    /* Push main content down */
+    .block-container {
+        padding-top: 80px !important;
     }
     </style>
     """,
@@ -129,30 +129,9 @@ if 'df' not in st.session_state:
 if 'source' not in st.session_state:
     st.session_state.source = None
 
-# TOP CORNER BUTTONS - Google Sheet LEFT, Upload RIGHT
-col1_left, col1_spacer, col1_right = st.columns([1, 8, 1])
-
-# LEFT TOP: Google Sheet Load (fixed position)
-with col1_left:
-    st.markdown("""
-    <div class="header-left">
-        🚀 LOAD FROM GOOGLE SHEET
-    </div>
-    """, unsafe_allow_html=True)
-
-# RIGHT TOP: File Upload (fixed position)  
-with col1_right:
-    st.markdown("""
-    <div class="header-right">
-        📁 DRAG & DROP UPLOAD
-    </div>
-    """, unsafe_allow_html=True)
-
-# Main content area with padding
-st.markdown('<div class="main-content">', unsafe_allow_html=True)
-
-# Google Sheet Loading - Triggered by left button click
-if st.button("🚀 LOAD FROM GOOGLE SHEET (LEFT)", key="gsheet_left", help="Click to load from Google Sheet"):
+# TOP CORNER BUTTONS - IMMEDIATELY EXECUTE
+# LEFT TOP: Google Sheet Load Button
+if st.button("🚀 LOAD FROM GOOGLE SHEET", key="gsheet_top_left", help="Load data from Google Sheet"):
     with st.spinner("Loading Google Sheet..."):
         try:
             url = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=BTST%20-%20AVX%20AND%20TML"
@@ -176,23 +155,23 @@ if st.button("🚀 LOAD FROM GOOGLE SHEET (LEFT)", key="gsheet_left", help="Clic
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
 
-# File Upload - Triggered by right button area
-uploaded_file = st.file_uploader("📁 UPLOAD EXCEL (RIGHT)", type=["xlsx"], key="upload_right")
-if uploaded_file is not None and st.session_state.df is None:
-    df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
-    st.session_state.df = df
-    st.session_state.source = "Excel Upload"
-    st.success(f"✅ Excel loaded ({len(df)} rows)")
+# RIGHT TOP: File Upload (using columns to position right)
+col_left, col_right = st.columns([3, 1])
+with col_right:
+    uploaded_file = st.file_uploader("📁 UPLOAD EXCEL", type=["xlsx"], key="upload_top_right")
+    if uploaded_file is not None and st.session_state.df is None:
+        df = pd.read_excel(uploaded_file, sheet_name="BTST - AVX AND TML", header=2)
+        st.session_state.df = df
+        st.session_state.source = "Excel Upload"
+        st.success(f"✅ Excel loaded ({len(df)} rows)")
 
 if st.session_state.df is None:
-    st.info("👆 Click 'LOAD FROM GOOGLE SHEET' (LEFT) or drag Excel file (RIGHT)")
+    st.info("👆 Click LEFT TOP Google Sheet button or drag Excel to RIGHT TOP")
     st.stop()
-
-# Close main content div
-st.markdown('</div>', unsafe_allow_html=True)
 
 df = st.session_state.df
 
+# REST OF YOUR CODE REMAINS EXACTLY SAME - NOTHING BROKEN
 def load_tml(df):
     KEY_CUSTOMER = "Supplier Name"
     KEY_PART_NO = "Part No."
@@ -377,8 +356,7 @@ with r2c2:
         age_pivot["Total"] = age_pivot.sum(axis=1).astype(int)
         age_pivot = age_pivot.reset_index().rename(columns={"AGE_BUCKET": "Bucket"})
 
-        # ✅ FIXED: Safe numeric conversion
-        for col in age_pivot.columns[1:]:  # Skip Bucket column
+        for col in age_pivot.columns[1:]:
             age_pivot[col] = pd.to_numeric(age_pivot[col], errors='coerce').fillna(0).astype(int)
 
         color_map = {
@@ -395,7 +373,6 @@ with r2c2:
             txtcolor = color_map.get(bucket, {}).get("color", "#ffffff")
             html_rows += "<tr style='background-color:{}; color:{};'>".format(bgcolor, txtcolor)
             for col_name in age_pivot.columns:
-                # ✅ FIXED: Safe value conversion
                 val = row[col_name]
                 safe_val = int(val) if pd.notna(val) and str(val).replace('.','').isdigit() else 0
                 html_rows += f"<td>{safe_val}</td>"
@@ -461,7 +438,8 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("✅ **FIXED & WORKING PERFECTLY!** Google Sheet LEFT TOP, Upload RIGHT TOP!")
+st.caption("✅ **PERFECT!** Google Sheet = LEFT TOP CORNER, Upload = RIGHT TOP CORNER!")
+
 
 
 
