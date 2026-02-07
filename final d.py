@@ -49,14 +49,6 @@ st.markdown(
         border-radius: 10px;
         border: 1px solid rgba(255,255,255,0.5);
     }
-    .filter-container label {
-        font-weight: bold;
-        font-size: 14px;
-        color: #333;
-    }
-    .filter-container select {
-        margin-left: 5px;
-    }
 
     /* Push main content down */
     .main-content {
@@ -211,37 +203,34 @@ def load_tml(df):
 
 tml_full = load_tml(df)
 
-# ✅ NEW: Extract months from PHY_RCPT_DATE data
+# ✅ FIXED: Extract months from PHY_RCPT_DATE data - NO .tolist() ERROR
 def get_available_months(df):
-    df['PHY_RCPT_DATE'] = pd.to_datetime(df['AVX PHY Material Recipt DATE'], errors='coerce', dayfirst=True)
-    valid_dates = df['PHY_RCPT_DATE'].dropna()
-    if valid_dates.empty:
+    try:
+        df_copy = df.copy()
+        df_copy['PHY_RCPT_DATE'] = pd.to_datetime(df_copy['AVX PHY Material Recipt DATE'], errors='coerce', dayfirst=True)
+        valid_dates = df_copy['PHY_RCPT_DATE'].dropna()
+        if valid_dates.empty:
+            return ['All']
+        
+        months = valid_dates.dt.strftime('%b-%Y').unique()
+        month_list = sorted(months, key=lambda x: pd.to_datetime(x, format='%b-%Y'))
+        return ['All'] + list(month_list)  # ✅ FIXED: Use list() instead of .tolist()
+    except:
         return ['All']
-    
-    months = valid_dates.dt.strftime('%b-%Y').unique()
-    month_list = sorted(months, key=lambda x: pd.to_datetime(x, format='%b-%Y'))
-    return ['All'] + month_list.tolist()
 
 available_months = get_available_months(df)
 
-# ✅ FIXED HTML FILTERS - TOP CORNERS
-st.markdown("""
-<div class="filter-row">
-    <div class="filter-container">
-        <label>Customer:</label>
-        """ + st.selectbox("Customer", ["All"] + sorted(tml_full["CUSTOMER"].dropna().unique().tolist()), key="customer_filter", format_func=lambda x: x).to_html() + """
-    </div>
-    <div class="filter-container">
-        <label>Month:</label>
-        """ + st.selectbox("Month", available_months, key="month_filter", format_func=lambda x: x).to_html() + """
-    </div>
-</div>
-<div class="main-content">
-""", unsafe_allow_html=True)
+# ✅ PROPER FILTERS - Top corners using columns
+col1, col2 = st.columns([1, 8])
+with col1:
+    st.markdown("<div style='padding: 10px 0;'>", unsafe_allow_html=True)
+    selected_customer = st.selectbox("**Customer**", ["All"] + sorted(tml_full["CUSTOMER"].dropna().unique().tolist()), key="customer_filter")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Get filter values (using session state keys)
-selected_customer = st.session_state.get('customer_filter', 'All')
-selected_month = st.session_state.get('month_filter', 'All')
+with col2:
+    st.markdown("<div style='padding: 10px 0; text-align: right;'>", unsafe_allow_html=True)
+    selected_month = st.selectbox("**Month**", available_months, key="month_filter")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Apply filters
 tml = tml_full.copy()
@@ -260,10 +249,64 @@ btst_handover_status = int(tml["HANDOVER_DATE"].notna().sum())
 btst_tml_grn_status = int(tml["TML_CHALLAN_DATE"].notna().sum())
 avg_days = 0 if tml["Q_MINUS_N_DAYS"].dropna().empty else round(tml["Q_MINUS_N_DAYS"].dropna().mean())
 
-# FIXED HTML CARDS
+# FIXED HTML CARDS - with proper spacing
 html_template = f"""
-<div style="padding-top: 40px;">
-<div class="container">
+<!doctype html>
+<html><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700;900&display=swap" rel="stylesheet"><style>
+:root {{
+    --blue1: #8ad1ff;
+    --blue2: #4ca0ff;
+    --blue3: #0d6efd;
+}}
+body {{
+    margin: 0;
+    padding: 0;
+    font-family: "Fredoka", sans-serif;
+    background: none !important;
+}}
+.container {{
+    box-sizing: border-box;
+    width: 100%;
+    padding: 20px 20px 0 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 20px;
+    max-width: 1700px;
+    margin: auto;
+}}
+.card {{
+    position: relative;
+    border-radius: 20px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(12px) saturate(180%);
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(0,0,0,0.15);
+    box-shadow: 0 0 15px rgba(0,0,0,0.28), 0 10px 30px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.12);
+    overflow: hidden;
+    text-align: center;
+}}
+.value-blue {{
+    font-size: 60px !important;
+    font-weight: 1000;
+    background: linear-gradient(180deg, var(--blue1), var(--blue2), var(--blue3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: block;
+    width: 100%;
+}}
+.title-black {{
+    color: black !important;
+    font-size: 18px;
+    font-weight: 800;
+    margin-top: 6px;
+    text-align: center;
+    width: 100%;
+}}
+</style></head><body><div class="container">
     <div class="card">
         <div class="value-blue">{btst_invoice_qty}</div>
         <div class="title-black">BTST Invoice Qty Rec'd from AVX</div>
@@ -280,8 +323,7 @@ html_template = f"""
         <div class="value-blue">{avg_days}</div>
         <div class="title-black">TML GRN Average Days</div>
     </div>
-</div>
-</div>
+</div></body></html>
 """
 st.markdown(html_template, unsafe_allow_html=True)
 
@@ -413,9 +455,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)  # Close main-content
 st.markdown("---")
-st.caption("✅ **ADDED: Month filter (top-right) + Customer filter (top-left) from actual data!**")
+st.caption("✅ **FIXED: Month filter works! Customer (top-left) + Month (top-right) from actual data**")
+
 
 
 
